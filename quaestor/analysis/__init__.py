@@ -11,6 +11,18 @@ Components:
 """
 
 # Domain models
+# Linter
+from quaestor.analysis.linter import (
+    Category,
+    LinterConfig,
+    LintIssue,
+    LintResult,
+    LintRule,
+    Severity,
+    StaticLinter,
+    lint_file,
+    lint_string,
+)
 from quaestor.analysis.models import (
     AgentWorkflow,
     EntryPoint,
@@ -34,28 +46,6 @@ from quaestor.analysis.parser import (
     parse_python_string,
 )
 
-# Linter
-from quaestor.analysis.linter import (
-    Category,
-    LinterConfig,
-    LintIssue,
-    LintResult,
-    LintRule,
-    Severity,
-    StaticLinter,
-    lint_file,
-    lint_string,
-)
-
-# Workflow Analyzer
-from quaestor.analysis.workflow_analyzer import (
-    AnalyzerConfig,
-    DetectedState,
-    DetectedTool,
-    WorkflowAnalysis,
-    WorkflowAnalyzer,
-)
-
 # Pipeline
 from quaestor.analysis.pipeline import (
     AnalysisLevel,
@@ -66,6 +56,15 @@ from quaestor.analysis.pipeline import (
     analyze_file,
     analyze_string,
     lint_only,
+)
+
+# Workflow Analyzer
+from quaestor.analysis.workflow_analyzer import (
+    AnalyzerConfig,
+    DetectedState,
+    DetectedTool,
+    WorkflowAnalysis,
+    WorkflowAnalyzer,
 )
 
 __all__ = [

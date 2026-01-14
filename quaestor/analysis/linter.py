@@ -11,11 +11,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from quaestor.analysis.parser import ParsedCode, PythonParser, FunctionDef, ClassDef
+from quaestor.analysis.parser import ParsedCode, PythonParser
 
 
 class Severity(str, Enum):
     """Severity levels for lint issues."""
+
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
@@ -23,6 +24,7 @@ class Severity(str, Enum):
 
 class Category(str, Enum):
     """Categories of lint rules."""
+
     CORRECTNESS = "correctness"
     SAFETY = "safety"
     SECURITY = "security"
@@ -35,6 +37,7 @@ class Category(str, Enum):
 @dataclass
 class LintRule:
     """Definition of a lint rule."""
+
     id: str
     name: str
     description: str
@@ -46,6 +49,7 @@ class LintRule:
 @dataclass
 class LintIssue:
     """A single linting issue found in code."""
+
     rule_id: str
     severity: Severity
     category: Category
@@ -60,34 +64,35 @@ class LintIssue:
 @dataclass
 class LintResult:
     """Complete linting results for a file or codebase."""
+
     file_path: str
     issues: list[LintIssue] = field(default_factory=list)
     rules_checked: list[str] = field(default_factory=list)
-    
+
     @property
     def error_count(self) -> int:
         """Count of error-level issues."""
         return sum(1 for i in self.issues if i.severity == Severity.ERROR)
-    
+
     @property
     def warning_count(self) -> int:
         """Count of warning-level issues."""
         return sum(1 for i in self.issues if i.severity == Severity.WARNING)
-    
+
     @property
     def info_count(self) -> int:
         """Count of info-level issues."""
         return sum(1 for i in self.issues if i.severity == Severity.INFO)
-    
+
     @property
     def has_errors(self) -> bool:
         """Check if any error-level issues exist."""
         return self.error_count > 0
-    
+
     def get_issues_by_severity(self, severity: Severity) -> list[LintIssue]:
         """Get all issues with a specific severity."""
         return [i for i in self.issues if i.severity == severity]
-    
+
     def get_issues_by_category(self, category: Category) -> list[LintIssue]:
         """Get all issues in a specific category."""
         return [i for i in self.issues if i.category == category]
@@ -96,13 +101,14 @@ class LintResult:
 @dataclass
 class LinterConfig:
     """Configuration for the linter."""
+
     enabled_rules: set[str] = field(default_factory=set)
     disabled_rules: set[str] = field(default_factory=set)
     severity_overrides: dict[str, Severity] = field(default_factory=dict)
-    
+
     # Safety settings (read-only by default per spec)
     read_only: bool = True
-    
+
     def is_rule_enabled(self, rule_id: str) -> bool:
         """Check if a rule is enabled."""
         if self.disabled_rules and rule_id in self.disabled_rules:
@@ -210,7 +216,7 @@ BUILTIN_RULES: dict[str, LintRule] = {
 class StaticLinter:
     """
     Static linter for agent code.
-    
+
     Performs fast, no-LLM analysis to detect:
     - Missing docstrings
     - Error handling issues
@@ -218,102 +224,102 @@ class StaticLinter:
     - Security vulnerabilities
     - Performance issues
     - Best practice violations
-    
+
     SAFETY: Operates in read-only mode by default.
     Never modifies source files unless explicitly enabled.
-    
+
     Usage:
         linter = StaticLinter()
         result = linter.lint_file("agent.py")
-        
+
         # Or with parsed code
         result = linter.lint_parsed(parsed_code)
     """
-    
+
     def __init__(self, config: LinterConfig | None = None):
         """Initialize the linter with optional configuration."""
         self.config = config or LinterConfig()
         self._parser = PythonParser()
         self._rules = BUILTIN_RULES.copy()
-    
+
     def lint_file(self, file_path: str | Path) -> LintResult:
         """
         Lint a Python file.
-        
+
         Args:
             file_path: Path to the Python file
-            
+
         Returns:
             LintResult with all found issues
         """
         path = Path(file_path)
         parsed = self._parser.parse_file(path)
         return self.lint_parsed(parsed)
-    
+
     def lint_string(self, source_code: str, file_name: str = "<string>") -> LintResult:
         """
         Lint Python source code string.
-        
+
         Args:
             source_code: Python source code
             file_name: Name for reporting
-            
+
         Returns:
             LintResult with all found issues
         """
         parsed = self._parser.parse_string(source_code, file_name)
         return self.lint_parsed(parsed)
-    
+
     def lint_parsed(self, parsed: ParsedCode) -> LintResult:
         """
         Lint already-parsed code.
-        
+
         Args:
             parsed: ParsedCode from PythonParser
-            
+
         Returns:
             LintResult with all found issues
         """
         result = LintResult(file_path=parsed.source_file)
-        
+
         # Track which rules we checked
         for rule_id in self._rules:
             if self.config.is_rule_enabled(rule_id):
                 result.rules_checked.append(rule_id)
-        
+
         # Run all enabled checks
         if self.config.is_rule_enabled("Q001"):
             self._check_function_docstrings(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q002"):
             self._check_class_docstrings(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q010"):
             self._check_async_error_handling(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q011"):
             self._check_bare_except(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q020"):
             self._check_tool_decorators(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q022"):
             self._check_infinite_loops(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q030"):
             self._check_hardcoded_secrets(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q031"):
             self._check_unsafe_eval(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q040"):
             self._check_sync_in_async(parsed, result)
-        
+
         if self.config.is_rule_enabled("Q051"):
             self._check_function_length(parsed, result)
-        
+
         return result
-    
+
     def _add_issue(
         self,
         result: LintResult,
@@ -328,22 +334,24 @@ class StaticLinter:
         rule = self._rules.get(rule_id)
         if not rule:
             return
-        
+
         # Apply severity override if configured
         severity = self.config.severity_overrides.get(rule_id, rule.severity)
-        
-        result.issues.append(LintIssue(
-            rule_id=rule_id,
-            severity=severity,
-            category=rule.category,
-            message=message,
-            file_path=result.file_path,
-            line=line,
-            column=column,
-            suggestion=suggestion,
-            code_snippet=code_snippet,
-        ))
-    
+
+        result.issues.append(
+            LintIssue(
+                rule_id=rule_id,
+                severity=severity,
+                category=rule.category,
+                message=message,
+                file_path=result.file_path,
+                line=line,
+                column=column,
+                suggestion=suggestion,
+                code_snippet=code_snippet,
+            )
+        )
+
     def _check_function_docstrings(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for missing function docstrings."""
         for func in parsed.functions:
@@ -355,9 +363,9 @@ class StaticLinter:
                     "Q001",
                     f"Function '{func.name}' is missing a docstring",
                     line,
-                    suggestion=f'Add a docstring to describe what {func.name} does',
+                    suggestion=f"Add a docstring to describe what {func.name} does",
                 )
-        
+
         # Also check methods in classes
         for cls in parsed.classes:
             for method in cls.methods:
@@ -369,9 +377,9 @@ class StaticLinter:
                         "Q001",
                         f"Method '{cls.name}.{method.name}' is missing a docstring",
                         line,
-                        suggestion=f'Add a docstring to describe what {method.name} does',
+                        suggestion=f"Add a docstring to describe what {method.name} does",
                     )
-    
+
     def _check_class_docstrings(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for missing class docstrings."""
         for cls in parsed.classes:
@@ -383,9 +391,9 @@ class StaticLinter:
                     "Q002",
                     f"Class '{cls.name}' is missing a docstring",
                     line,
-                    suggestion=f'Add a docstring to describe the purpose of {cls.name}',
+                    suggestion=f"Add a docstring to describe the purpose of {cls.name}",
                 )
-    
+
     def _check_async_error_handling(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check async functions for error handling."""
         for func in parsed.functions:
@@ -393,7 +401,7 @@ class StaticLinter:
                 # Simple heuristic: async functions doing I/O should have try/except
                 has_await = "await " in func.body_text
                 has_try = "try:" in func.body_text or "try\n" in func.body_text
-                
+
                 if has_await and not has_try:
                     loc = func.location
                     line = loc.start_line if loc else 1
@@ -404,7 +412,7 @@ class StaticLinter:
                         line,
                         suggestion="Add error handling for async operations",
                     )
-    
+
     def _check_bare_except(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for bare except clauses."""
         # Check source code directly for "except:" pattern
@@ -419,33 +427,31 @@ class StaticLinter:
                     suggestion="Use 'except Exception:' or catch specific exceptions",
                     code_snippet=line.strip(),
                 )
-    
+
     def _check_tool_decorators(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for functions that look like tools but lack decorator."""
         tool_indicators = ["execute", "run", "process", "handle", "fetch", "search", "create"]
-        
+
         for func in parsed.functions:
             # Skip if already has tool decorator
             has_tool_decorator = any(
-                d.name in ("tool", "function_tool", "agent_tool")
-                for d in func.decorators
+                d.name in ("tool", "function_tool", "agent_tool") for d in func.decorators
             )
             if has_tool_decorator:
                 continue
-            
+
             # Check if function name suggests it's a tool
             name_lower = func.name.lower()
             looks_like_tool = any(ind in name_lower for ind in tool_indicators)
-            
+
             # Check if docstring mentions tool-like behavior
             doc_mentions_tool = False
             if func.docstring:
                 doc_lower = func.docstring.lower()
                 doc_mentions_tool = any(
-                    word in doc_lower
-                    for word in ["tool", "agent", "action", "capability"]
+                    word in doc_lower for word in ["tool", "agent", "action", "capability"]
                 )
-            
+
             if looks_like_tool or doc_mentions_tool:
                 loc = func.location
                 line = loc.start_line if loc else 1
@@ -456,18 +462,18 @@ class StaticLinter:
                     line,
                     suggestion="Add @tool decorator if this is an agent tool",
                 )
-    
+
     def _check_infinite_loops(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for potential infinite loops."""
         for func in parsed.functions:
             if not func.body_text:
                 continue
-            
+
             # Simple heuristic: while True without break
             if "while True:" in func.body_text or "while True\n" in func.body_text:
                 has_break = "break" in func.body_text
                 has_return = "return" in func.body_text
-                
+
                 if not has_break and not has_return:
                     loc = func.location
                     line = loc.start_line if loc else 1
@@ -478,7 +484,7 @@ class StaticLinter:
                         line,
                         suggestion="Ensure loop has a termination condition",
                     )
-    
+
     def _check_hardcoded_secrets(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for hardcoded secrets or API keys."""
         secret_patterns = [
@@ -490,15 +496,15 @@ class StaticLinter:
             "auth_token",
             "private_key",
         ]
-        
+
         for i, line in enumerate(parsed.source_code.split("\n"), 1):
             line_lower = line.lower()
-            
+
             # Skip comments and imports
             stripped = line.strip()
             if stripped.startswith("#") or stripped.startswith("import "):
                 continue
-            
+
             # Check for assignments with secret-like names
             if "=" in line:
                 for pattern in secret_patterns:
@@ -517,16 +523,16 @@ class StaticLinter:
                                 code_snippet=line.strip()[:60] + "...",
                             )
                             break
-    
+
     def _check_unsafe_eval(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for use of eval() or exec()."""
         for i, line in enumerate(parsed.source_code.split("\n"), 1):
             stripped = line.strip()
-            
+
             # Skip comments
             if stripped.startswith("#"):
                 continue
-            
+
             if "eval(" in line:
                 self._add_issue(
                     result,
@@ -536,7 +542,7 @@ class StaticLinter:
                     suggestion="Use ast.literal_eval() for safe evaluation of literals",
                     code_snippet=stripped[:60],
                 )
-            
+
             if "exec(" in line:
                 self._add_issue(
                     result,
@@ -546,7 +552,7 @@ class StaticLinter:
                     suggestion="Avoid exec() - use safer alternatives",
                     code_snippet=stripped[:60],
                 )
-    
+
     def _check_sync_in_async(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for synchronous I/O in async functions."""
         sync_io_patterns = [
@@ -556,11 +562,11 @@ class StaticLinter:
             "urllib.request",
             "time.sleep(",
         ]
-        
+
         for func in parsed.functions:
             if not func.is_async or not func.body_text:
                 continue
-            
+
             for pattern in sync_io_patterns:
                 if pattern in func.body_text:
                     loc = func.location
@@ -572,7 +578,7 @@ class StaticLinter:
                         line,
                         suggestion="Use async equivalents (aiofiles, httpx, asyncio.sleep)",
                     )
-    
+
     def _check_function_length(
         self,
         parsed: ParsedCode,
@@ -583,7 +589,7 @@ class StaticLinter:
         for func in parsed.functions:
             if not func.body_text:
                 continue
-            
+
             line_count = func.body_text.count("\n") + 1
             if line_count > max_lines:
                 loc = func.location
@@ -601,11 +607,11 @@ class StaticLinter:
 def lint_file(file_path: str | Path, config: LinterConfig | None = None) -> LintResult:
     """
     Lint a Python file.
-    
+
     Args:
         file_path: Path to the Python file
         config: Optional linter configuration
-        
+
     Returns:
         LintResult with all found issues
     """
@@ -620,12 +626,12 @@ def lint_string(
 ) -> LintResult:
     """
     Lint Python source code string.
-    
+
     Args:
         source_code: Python source code
         file_name: Name for reporting
         config: Optional linter configuration
-        
+
     Returns:
         LintResult with all found issues
     """

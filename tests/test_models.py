@@ -1,9 +1,9 @@
 """Tests for Quaestor domain models."""
 
 import pytest
+
 from quaestor.analysis.models import (
     AgentWorkflow,
-    EntryPoint,
     Invariant,
     StateDefinition,
     StateType,
@@ -16,7 +16,7 @@ from quaestor.analysis.models import (
 
 class TestToolDefinition:
     """Tests for ToolDefinition model."""
-    
+
     def test_basic_tool_creation(self):
         """Test creating a basic tool definition."""
         tool = ToolDefinition(
@@ -33,12 +33,12 @@ class TestToolDefinition:
             ],
             return_type="list[Document]",
         )
-        
+
         assert tool.name == "search_documents"
         assert tool.category == ToolCategory.RETRIEVAL
         assert len(tool.parameters) == 1
         assert tool.parameters[0].name == "query"
-    
+
     def test_tool_with_side_effects(self):
         """Test tool with side effects marked."""
         tool = ToolDefinition(
@@ -48,14 +48,14 @@ class TestToolDefinition:
             side_effects=["sends_email", "logs_action"],
             requires_confirmation=True,
         )
-        
+
         assert "sends_email" in tool.side_effects
         assert tool.requires_confirmation is True
 
 
 class TestStateDefinition:
     """Tests for StateDefinition model."""
-    
+
     def test_initial_state(self):
         """Test creating an initial state."""
         state = StateDefinition(
@@ -64,10 +64,10 @@ class TestStateDefinition:
             state_type=StateType.INITIAL,
             allowed_tools=["greet_user", "get_context"],
         )
-        
+
         assert state.state_type == StateType.INITIAL
         assert "greet_user" in state.allowed_tools
-    
+
     def test_terminal_state(self):
         """Test creating a terminal state."""
         state = StateDefinition(
@@ -75,13 +75,13 @@ class TestStateDefinition:
             description="Task has been successfully completed",
             state_type=StateType.TERMINAL,
         )
-        
+
         assert state.state_type == StateType.TERMINAL
 
 
 class TestAgentWorkflow:
     """Tests for AgentWorkflow model."""
-    
+
     @pytest.fixture
     def sample_workflow(self) -> AgentWorkflow:
         """Create a sample workflow for testing."""
@@ -139,34 +139,34 @@ class TestAgentWorkflow:
                 ),
             ],
         )
-    
+
     def test_get_initial_state(self, sample_workflow: AgentWorkflow):
         """Test getting the initial state."""
         initial = sample_workflow.get_initial_state()
         assert initial is not None
         assert initial.name == "greeting"
-    
+
     def test_get_terminal_states(self, sample_workflow: AgentWorkflow):
         """Test getting terminal states."""
         terminals = sample_workflow.get_terminal_states()
         assert len(terminals) == 1
         assert terminals[0].name == "resolved"
-    
+
     def test_get_tool_by_name(self, sample_workflow: AgentWorkflow):
         """Test looking up a tool by name."""
         tool = sample_workflow.get_tool_by_name("search_kb")
         assert tool is not None
         assert tool.category == ToolCategory.RETRIEVAL
-        
+
         missing = sample_workflow.get_tool_by_name("nonexistent")
         assert missing is None
-    
+
     def test_get_transitions_from(self, sample_workflow: AgentWorkflow):
         """Test getting transitions from a state."""
         transitions = sample_workflow.get_transitions_from("greeting")
         assert len(transitions) == 1
         assert transitions[0].to_state == "investigating"
-        
+
         # No transitions from terminal state
         transitions = sample_workflow.get_transitions_from("resolved")
         assert len(transitions) == 0

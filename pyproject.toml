@@ -58,6 +58,9 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.3.0",
     "mypy>=1.8.0",
+    "bandit>=1.7.0",
+    "pip-audit>=2.7.0",
+    "pre-commit>=3.6.0",
     "smactorio @ git+https://github.com/leonbreukelman/smactorio.git",
 ]
 
@@ -115,4 +118,30 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --cov=quaestor --cov-report=term-missing"
+addopts = "-v --cov=quaestor --cov-report=term-missing --cov-report=xml"
+
+[tool.coverage.run]
+branch = true
+source = ["quaestor"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/.venv/*",
+    "*/cli.py",  # CLI implementation pending
+    "*/coverage/__init__.py",
+    "*/evaluation/__init__.py",
+    "*/optimization/__init__.py",
+    "*/reporting/__init__.py",
+    "*/testing/__init__.py",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 85  # Temporarily lowered for Phase 1, will increase to 90% in Phase 2
+exclude_also = [
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "@(abc\\.)?abstractmethod",
+]
