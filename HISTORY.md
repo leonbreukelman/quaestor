@@ -36,6 +36,14 @@ See governance principle `quality-004` (GitHub-Native Project Management).
 - [x] Analysis pipeline (`analysis/pipeline.py`) - Unified API, ~83% coverage
 - [x] 73 passing tests, 90% overall coverage
 
+### 🔄 Phase 2: Test Generation (In Progress)
+- [x] TestCase/TestSuite Pydantic models (`testing/models.py`) - Issue #2, 2026-01-14
+  - Discriminated union Assertion types (6 variants)
+  - JSON/YAML serialization for OSCAL compatibility
+  - 45 tests, 98.94% module coverage
+- [ ] Fixture system for reusable test components - Issue #3
+- [ ] TestDesigner DSPy module
+
 ---
 
 ## 📅 Archived Roadmap
