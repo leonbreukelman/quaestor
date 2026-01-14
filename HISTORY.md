@@ -111,7 +111,7 @@ See [Issue #22](https://github.com/leonbreukelman/quaestor/issues/22) - Epic
 
 ### 2026-01-13: Smactorio Integration Strategy
 **Decision:** Tight coupling with Smactorio as core dependency
-**Rationale:** 
+**Rationale:**
 - Smactorio provides governance-as-a-service needed for compliant agent testing
 - Shared LLM infrastructure reduces complexity
 - Agent patterns (BaseAgent, AgentFactory) directly applicable
