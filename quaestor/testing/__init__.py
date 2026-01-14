@@ -4,6 +4,11 @@ Quaestor Testing Engine.
 Test generation and execution for AI agents.
 """
 
+from quaestor.testing.fixtures import (
+    FixtureDefinition,
+    FixtureScope,
+    FixtureValue,
+)
 from quaestor.testing.models import (
     Assertion,
     AssertionResult,
@@ -21,6 +26,7 @@ from quaestor.testing.models import (
 )
 
 __all__ = [
+    # Assertion types
     "Assertion",
     "AssertionResult",
     "AssertionType",
@@ -29,9 +35,14 @@ __all__ = [
     "RegexAssertion",
     "SchemaValidAssertion",
     "StateReachedAssertion",
+    "ToolCalledAssertion",
+    "parse_assertion",
+    # Test case models
     "TestCase",
     "TestResult",
     "TestSuite",
-    "ToolCalledAssertion",
-    "parse_assertion",
+    # Fixture models
+    "FixtureDefinition",
+    "FixtureScope",
+    "FixtureValue",
 ]
