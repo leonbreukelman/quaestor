@@ -3778,6 +3778,7 @@ docs = [
 [package.dev-dependencies]
 dev = [
     { name = "detect-secrets" },
+    { name = "pytest-cov" },
     { name = "types-pyyaml" },
 ]
 
@@ -3810,6 +3811,7 @@ provides-extras = ["dev", "docs"]
 [package.metadata.requires-dev]
 dev = [
     { name = "detect-secrets", specifier = ">=1.5.0" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
 ]
 
@@ -4113,7 +4115,7 @@ wheels = [
 [[package]]
 name = "smactorio"
 version = "0.1.0"
-source = { git = "https://github.com/leonbreukelman/smactorio.git#652587aa53ef8b989ffc281c6e50416abb475cfb" }
+source = { git = "https://github.com/leonbreukelman/smactorio.git#dacc7a45bbb380c72f946d4be661dfc6958fa255" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "anthropic" },
