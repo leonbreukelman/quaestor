@@ -11,10 +11,10 @@ Follows patterns established in quaestor.analysis.models.
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class AssertionType(str, Enum):
@@ -144,9 +144,7 @@ class SchemaValidAssertion(AssertionBase):
     type: Literal[AssertionType.SCHEMA_VALID] = Field(
         default=AssertionType.SCHEMA_VALID, description="Assertion type discriminator"
     )
-    json_schema: dict[str, Any] = Field(
-        ..., description="JSON schema to validate against"
-    )
+    json_schema: dict[str, Any] = Field(..., description="JSON schema to validate against")
 
     @field_validator("json_schema")
     @classmethod
@@ -159,14 +157,12 @@ class SchemaValidAssertion(AssertionBase):
 
 # Discriminated union type for all assertions
 _AssertionUnion = Annotated[
-    Union[
-        EqualsAssertion,
-        ContainsAssertion,
-        RegexAssertion,
-        ToolCalledAssertion,
-        StateReachedAssertion,
-        SchemaValidAssertion,
-    ],
+    EqualsAssertion
+    | ContainsAssertion
+    | RegexAssertion
+    | ToolCalledAssertion
+    | StateReachedAssertion
+    | SchemaValidAssertion,
     Field(discriminator="type"),
 ]
 

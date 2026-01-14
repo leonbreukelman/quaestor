@@ -13,6 +13,7 @@ from quaestor.testing.fixtures import (
     FixtureResolver,
     FixtureScope,
     FixtureValue,
+    ScopedFixtureManager,
 )
 from quaestor.testing.models import (
     Assertion,
@@ -55,4 +56,5 @@ __all__ = [
     "FixtureResolver",
     "FixtureScope",
     "FixtureValue",
+    "ScopedFixtureManager",
 ]

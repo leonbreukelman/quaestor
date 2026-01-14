@@ -8,7 +8,7 @@ instances), and fixture scopes (lifetime management).
 Follows patterns established in quaestor.testing.models.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
@@ -435,3 +435,178 @@ class FixtureResolver:
                         errors.append(error_msg)
 
         return errors
+
+
+# =============================================================================
+# Scoped Fixture Manager
+# =============================================================================
+
+
+class ScopedFixtureManager:
+    """Manages fixture lifecycle with scope-based caching.
+
+    Provides scope-aware caching of fixture values, automatic cleanup at
+    scope boundaries, and built-in fixtures for common testing needs.
+
+    Scope hierarchy (from widest to narrowest):
+    - SESSION: One instance for the entire test session
+    - SUITE: One instance per test suite
+    - TEST: One instance per test (default)
+
+    Example:
+        >>> manager = ScopedFixtureManager()
+        >>> registry = FixtureRegistry()
+        >>> value = manager.get_or_create("my_fixture", lambda: expensive_setup())
+        >>> # Later, clean up at scope boundary
+        >>> manager.teardown_scope(FixtureScope.TEST)
+    """
+
+    # Built-in fixture names
+    BUILTIN_TEST_ID = "test_id"
+    BUILTIN_TEMP_DIR = "temp_dir"
+
+    def __init__(self) -> None:
+        """Initialize an empty scoped fixture manager."""
+        # Scope -> (name -> FixtureValue)
+        self._cache: dict[FixtureScope, dict[str, FixtureValue]] = {
+            FixtureScope.TEST: {},
+            FixtureScope.SUITE: {},
+            FixtureScope.SESSION: {},
+        }
+        # Scope -> list of cleanup callables
+        self._cleanup_handlers: dict[FixtureScope, list[Callable[[], None]]] = {
+            FixtureScope.TEST: [],
+            FixtureScope.SUITE: [],
+            FixtureScope.SESSION: [],
+        }
+        # Counter for unique test IDs
+        self._test_id_counter = 0
+
+    def get_or_create(
+        self,
+        name: str,
+        factory: Callable[[], Any] | None = None,
+        scope: FixtureScope = FixtureScope.TEST,
+        cleanup: Callable[[], None] | None = None,
+    ) -> Any:
+        """Get a cached fixture value or create a new one.
+
+        If the fixture is already cached for the given scope, returns the
+        cached value. Otherwise, invokes the factory to create a new value
+        and caches it.
+
+        Args:
+            name: The fixture name.
+            factory: Callable that creates the fixture value. Can be None for
+                built-in fixtures.
+            scope: The scope for caching (TEST, SUITE, or SESSION).
+            cleanup: Optional cleanup callable to run on teardown.
+
+        Returns:
+            The fixture value (cached or newly created).
+
+        Raises:
+            ValueError: If factory is None and fixture is not a built-in.
+        """
+        # Check cache first
+        if name in self._cache[scope]:
+            return self._cache[scope][name].value
+
+        # Handle built-in fixtures
+        if name == self.BUILTIN_TEST_ID:
+            value = self._create_test_id()
+        elif name == self.BUILTIN_TEMP_DIR:
+            value, cleanup = self._create_temp_dir()
+        elif factory is not None:
+            value = factory()
+        else:
+            raise ValueError(f"No factory provided for fixture '{name}' and it's not a built-in")
+
+        # Create definition and wrap value
+        definition = FixtureDefinition(name=name, scope=scope)
+        fixture_value = FixtureValue(value=value, definition=definition)
+
+        # Cache the value
+        self._cache[scope][name] = fixture_value
+
+        # Register cleanup handler if provided
+        if cleanup is not None:
+            self._cleanup_handlers[scope].append(cleanup)
+
+        return value
+
+    def teardown_scope(self, scope: FixtureScope) -> None:
+        """Destroy all fixtures at the specified scope.
+
+        Runs all registered cleanup handlers and clears the cache for the
+        given scope. Fixtures at other scopes remain intact.
+
+        Args:
+            scope: The scope to tear down (TEST, SUITE, or SESSION).
+        """
+        import contextlib
+
+        # Run cleanup handlers in reverse order (LIFO)
+        for handler in reversed(self._cleanup_handlers[scope]):
+            with contextlib.suppress(Exception):
+                handler()
+
+        # Clear cache and handlers for this scope
+        self._cache[scope].clear()
+        self._cleanup_handlers[scope].clear()
+
+    def get_cached(self, name: str, scope: FixtureScope) -> FixtureValue | None:
+        """Get a cached fixture value if it exists.
+
+        Args:
+            name: The fixture name.
+            scope: The scope to check.
+
+        Returns:
+            The cached FixtureValue, or None if not cached.
+        """
+        return self._cache[scope].get(name)
+
+    def is_cached(self, name: str, scope: FixtureScope) -> bool:
+        """Check if a fixture is cached.
+
+        Args:
+            name: The fixture name.
+            scope: The scope to check.
+
+        Returns:
+            True if the fixture is cached, False otherwise.
+        """
+        return name in self._cache[scope]
+
+    def _create_test_id(self) -> str:
+        """Create a unique test identifier."""
+        import uuid
+
+        self._test_id_counter += 1
+        # Format: test-<counter>-<short_uuid>
+        short_uuid = str(uuid.uuid4())[:8]
+        return f"test-{self._test_id_counter:04d}-{short_uuid}"
+
+    def _create_temp_dir(self) -> tuple[Any, Callable[[], None]]:
+        """Create a temporary directory with cleanup.
+
+        Returns:
+            Tuple of (Path to temp dir, cleanup callable).
+        """
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="quaestor_test_"))
+
+        def cleanup() -> None:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+
+        return temp_dir, cleanup
+
+    def __repr__(self) -> str:
+        """Return a string representation of the manager."""
+        counts = {scope.value: len(cache) for scope, cache in self._cache.items()}
+        return f"ScopedFixtureManager(cached={counts})"

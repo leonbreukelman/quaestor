@@ -11,13 +11,12 @@ Tests cover:
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import yaml
 
 from quaestor.testing.models import (
-    Assertion,
     AssertionResult,
     AssertionType,
     ContainsAssertion,
@@ -31,7 +30,6 @@ from quaestor.testing.models import (
     ToolCalledAssertion,
     parse_assertion,
 )
-
 
 # =============================================================================
 # Assertion Types Tests (Discriminated Union)
@@ -343,12 +341,12 @@ class TestTestSuite:
             description="A comprehensive test suite",
             test_cases=[tc1, tc2],
             tags=["smoke", "regression"],
-            created_at=datetime(2026, 1, 14, tzinfo=timezone.utc),
+            created_at=datetime(2026, 1, 14, tzinfo=UTC),
         )
         assert suite.description == "A comprehensive test suite"
         assert len(suite.test_cases) == 2
         assert suite.tags == ["smoke", "regression"]
-        assert suite.created_at == datetime(2026, 1, 14, tzinfo=timezone.utc)
+        assert suite.created_at == datetime(2026, 1, 14, tzinfo=UTC)
 
     def test_test_suite_empty_test_cases_fails(self):
         """Test that empty test_cases list is rejected."""
@@ -420,7 +418,7 @@ class TestTestResult:
                 AssertionResult(assertion_name="check1", passed=True),
                 AssertionResult(assertion_name="check2", passed=True),
             ],
-            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=UTC),
         )
         assert result.passed is True
         assert result.test_case_id == "TC-001"
@@ -439,7 +437,7 @@ class TestTestResult:
                     message="Expected 'right' but got 'wrong'",
                 ),
             ],
-            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=UTC),
         )
         assert result.passed is False
 
@@ -448,7 +446,7 @@ class TestTestResult:
         result = TestResult(
             test_case_id="TC-003",
             assertion_results=[],
-            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=UTC),
             error_message="Connection timeout",
         )
         assert result.passed is False
@@ -459,7 +457,7 @@ class TestTestResult:
         result = TestResult(
             test_case_id="TC-004",
             assertion_results=[AssertionResult(assertion_name="check", passed=True)],
-            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=UTC),
             actual_output={"response": "success"},
             duration_ms=150,
         )
@@ -528,7 +526,7 @@ class TestJsonSerialization:
         result = TestResult(
             test_case_id="TC-001",
             assertion_results=[AssertionResult(assertion_name="check", passed=True)],
-            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=UTC),
             duration_ms=100,
         )
         json_str = result.model_dump_json()
@@ -591,7 +589,7 @@ class TestYamlSerialization:
         result = TestResult(
             test_case_id="TC-001",
             assertion_results=[AssertionResult(assertion_name="check", passed=True)],
-            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=timezone.utc),
+            executed_at=datetime(2026, 1, 14, 12, 0, 0, tzinfo=UTC),
         )
         yaml_str = result.to_yaml()
         assert "test_case_id: TC-001" in yaml_str

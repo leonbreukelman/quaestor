@@ -21,6 +21,7 @@ from quaestor.testing.fixtures import (
     FixtureResolver,
     FixtureScope,
     FixtureValue,
+    ScopedFixtureManager,
 )
 
 # =============================================================================
@@ -1008,3 +1009,315 @@ class TestFixtureResolverValidation:
 
         errors = resolver.validate_dependencies(registry)
         assert errors == []
+
+
+# =============================================================================
+# ScopedFixtureManager Tests
+# =============================================================================
+
+
+class TestScopedFixtureManagerInit:
+    """Tests for ScopedFixtureManager initialization."""
+
+    def test_init_creates_empty_caches(self) -> None:
+        """Manager should initialize with empty caches for all scopes."""
+        manager = ScopedFixtureManager()
+        for scope in FixtureScope:
+            assert not manager.is_cached("any", scope)
+
+    def test_init_creates_empty_cleanup_handlers(self) -> None:
+        """Manager should initialize with empty cleanup handlers."""
+        manager = ScopedFixtureManager()
+        # Verify by calling teardown - should not raise
+        for scope in FixtureScope:
+            manager.teardown_scope(scope)
+
+
+class TestScopedFixtureManagerGetOrCreate:
+    """Tests for get_or_create method."""
+
+    @pytest.fixture
+    def manager(self) -> ScopedFixtureManager:
+        """Provide a fresh ScopedFixtureManager."""
+        return ScopedFixtureManager()
+
+    def test_creates_fixture_with_factory(self, manager: ScopedFixtureManager) -> None:
+        """Should create fixture using provided factory."""
+        value = manager.get_or_create("test_fixture", lambda: "created_value")
+        assert value == "created_value"
+
+    def test_caches_fixture_value(self, manager: ScopedFixtureManager) -> None:
+        """Should cache fixture value for subsequent calls."""
+        call_count = 0
+
+        def factory() -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"value_{call_count}"
+
+        first = manager.get_or_create("test_fixture", factory)
+        second = manager.get_or_create("test_fixture", factory)
+
+        assert first == "value_1"
+        assert second == "value_1"  # Same cached value
+        assert call_count == 1  # Factory called only once
+
+    def test_scope_isolation(self, manager: ScopedFixtureManager) -> None:
+        """Different scopes should have separate caches."""
+        manager.get_or_create("fixture", lambda: "test_value", FixtureScope.TEST)
+        manager.get_or_create("fixture", lambda: "suite_value", FixtureScope.SUITE)
+
+        # Each scope has its own value
+        assert manager.get_cached("fixture", FixtureScope.TEST).value == "test_value"
+        assert manager.get_cached("fixture", FixtureScope.SUITE).value == "suite_value"
+
+    def test_default_scope_is_test(self, manager: ScopedFixtureManager) -> None:
+        """Default scope should be TEST."""
+        manager.get_or_create("fixture", lambda: "value")
+        assert manager.is_cached("fixture", FixtureScope.TEST)
+        assert not manager.is_cached("fixture", FixtureScope.SUITE)
+        assert not manager.is_cached("fixture", FixtureScope.SESSION)
+
+    def test_registers_cleanup_handler(self, manager: ScopedFixtureManager) -> None:
+        """Should register cleanup handler."""
+        cleanup_called = False
+
+        def cleanup() -> None:
+            nonlocal cleanup_called
+            cleanup_called = True
+
+        manager.get_or_create("fixture", lambda: "value", cleanup=cleanup)
+        manager.teardown_scope(FixtureScope.TEST)
+
+        assert cleanup_called
+
+    def test_raises_for_unknown_fixture_without_factory(
+        self, manager: ScopedFixtureManager
+    ) -> None:
+        """Should raise ValueError for unknown fixture without factory."""
+        with pytest.raises(ValueError, match="No factory provided"):
+            manager.get_or_create("unknown_fixture")
+
+    def test_factory_can_return_none(self, manager: ScopedFixtureManager) -> None:
+        """Factory returning None should be valid."""
+        value = manager.get_or_create("null_fixture", lambda: None)
+        assert value is None
+
+
+class TestScopedFixtureManagerBuiltinTestId:
+    """Tests for built-in test_id fixture."""
+
+    @pytest.fixture
+    def manager(self) -> ScopedFixtureManager:
+        """Provide a fresh ScopedFixtureManager."""
+        return ScopedFixtureManager()
+
+    def test_test_id_without_factory(self, manager: ScopedFixtureManager) -> None:
+        """test_id should work without providing a factory."""
+        test_id = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEST_ID)
+        assert test_id is not None
+        assert isinstance(test_id, str)
+
+    def test_test_id_format(self, manager: ScopedFixtureManager) -> None:
+        """test_id should have expected format: test-NNNN-XXXXXXXX."""
+        test_id = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEST_ID)
+        parts = test_id.split("-")
+        assert len(parts) == 3
+        assert parts[0] == "test"
+        assert len(parts[1]) == 4  # Counter part
+        assert len(parts[2]) == 8  # Short UUID
+
+    def test_test_id_uniqueness(self, manager: ScopedFixtureManager) -> None:
+        """Each test_id call (different scope) should generate unique IDs."""
+        # Clear cache between calls to generate new IDs
+        id1 = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEST_ID, scope=FixtureScope.TEST)
+        manager.teardown_scope(FixtureScope.TEST)
+        id2 = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEST_ID, scope=FixtureScope.TEST)
+
+        assert id1 != id2
+
+    def test_test_id_counter_increments(self, manager: ScopedFixtureManager) -> None:
+        """Counter should increment for each new test_id."""
+        # Generate multiple IDs by tearing down between each
+        ids = []
+        for _ in range(3):
+            test_id = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEST_ID)
+            ids.append(test_id)
+            manager.teardown_scope(FixtureScope.TEST)
+
+        # Extract counters
+        counters = [int(id_.split("-")[1]) for id_ in ids]
+        assert counters == [1, 2, 3]
+
+
+class TestScopedFixtureManagerBuiltinTempDir:
+    """Tests for built-in temp_dir fixture."""
+
+    @pytest.fixture
+    def manager(self) -> ScopedFixtureManager:
+        """Provide a fresh ScopedFixtureManager."""
+        return ScopedFixtureManager()
+
+    def test_temp_dir_without_factory(self, manager: ScopedFixtureManager) -> None:
+        """temp_dir should work without providing a factory."""
+        from pathlib import Path
+
+        temp_dir = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEMP_DIR)
+        assert isinstance(temp_dir, Path)
+        manager.teardown_scope(FixtureScope.TEST)
+
+    def test_temp_dir_exists(self, manager: ScopedFixtureManager) -> None:
+        """temp_dir should create an actual directory."""
+        temp_dir = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEMP_DIR)
+        assert temp_dir.exists()
+        assert temp_dir.is_dir()
+        manager.teardown_scope(FixtureScope.TEST)
+
+    def test_temp_dir_prefix(self, manager: ScopedFixtureManager) -> None:
+        """temp_dir should have quaestor_test_ prefix."""
+        temp_dir = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEMP_DIR)
+        assert "quaestor_test_" in temp_dir.name
+        manager.teardown_scope(FixtureScope.TEST)
+
+    def test_temp_dir_cleanup_on_teardown(self, manager: ScopedFixtureManager) -> None:
+        """temp_dir should be cleaned up on scope teardown."""
+        temp_dir = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEMP_DIR)
+        assert temp_dir.exists()
+
+        manager.teardown_scope(FixtureScope.TEST)
+        assert not temp_dir.exists()
+
+    def test_temp_dir_with_content(self, manager: ScopedFixtureManager) -> None:
+        """temp_dir cleanup should work even with content."""
+        temp_dir = manager.get_or_create(ScopedFixtureManager.BUILTIN_TEMP_DIR)
+
+        # Create files in the temp directory
+        (temp_dir / "test_file.txt").write_text("hello")
+        (temp_dir / "subdir").mkdir()
+        (temp_dir / "subdir" / "nested.txt").write_text("nested")
+
+        manager.teardown_scope(FixtureScope.TEST)
+        assert not temp_dir.exists()
+
+
+class TestScopedFixtureManagerTeardown:
+    """Tests for teardown_scope method."""
+
+    @pytest.fixture
+    def manager(self) -> ScopedFixtureManager:
+        """Provide a fresh ScopedFixtureManager."""
+        return ScopedFixtureManager()
+
+    def test_teardown_clears_cache(self, manager: ScopedFixtureManager) -> None:
+        """Teardown should clear the cache for the scope."""
+        manager.get_or_create("fixture", lambda: "value", FixtureScope.TEST)
+        assert manager.is_cached("fixture", FixtureScope.TEST)
+
+        manager.teardown_scope(FixtureScope.TEST)
+        assert not manager.is_cached("fixture", FixtureScope.TEST)
+
+    def test_teardown_only_affects_specified_scope(self, manager: ScopedFixtureManager) -> None:
+        """Teardown should only clear the specified scope."""
+        manager.get_or_create("test_f", lambda: "t", FixtureScope.TEST)
+        manager.get_or_create("suite_f", lambda: "s", FixtureScope.SUITE)
+        manager.get_or_create("session_f", lambda: "ss", FixtureScope.SESSION)
+
+        manager.teardown_scope(FixtureScope.TEST)
+
+        assert not manager.is_cached("test_f", FixtureScope.TEST)
+        assert manager.is_cached("suite_f", FixtureScope.SUITE)
+        assert manager.is_cached("session_f", FixtureScope.SESSION)
+
+    def test_cleanup_handlers_run_in_lifo_order(self, manager: ScopedFixtureManager) -> None:
+        """Cleanup handlers should run in LIFO order."""
+        order: list[int] = []
+
+        manager.get_or_create("f1", lambda: 1, cleanup=lambda: order.append(1))
+        manager.get_or_create("f2", lambda: 2, cleanup=lambda: order.append(2))
+        manager.get_or_create("f3", lambda: 3, cleanup=lambda: order.append(3))
+
+        manager.teardown_scope(FixtureScope.TEST)
+
+        assert order == [3, 2, 1]  # LIFO order
+
+    def test_cleanup_exception_doesnt_stop_other_handlers(
+        self, manager: ScopedFixtureManager
+    ) -> None:
+        """Exception in cleanup handler shouldn't stop others."""
+        handler2_called = False
+
+        def failing_cleanup() -> None:
+            raise RuntimeError("Cleanup failed")
+
+        def handler2() -> None:
+            nonlocal handler2_called
+            handler2_called = True
+
+        manager.get_or_create("f1", lambda: 1, cleanup=handler2)
+        manager.get_or_create("f2", lambda: 2, cleanup=failing_cleanup)
+
+        manager.teardown_scope(FixtureScope.TEST)
+
+        assert handler2_called  # Second handler still ran
+
+    def test_cleanup_handlers_cleared_after_teardown(self, manager: ScopedFixtureManager) -> None:
+        """Cleanup handlers should be cleared after teardown."""
+        call_count = 0
+
+        def cleanup() -> None:
+            nonlocal call_count
+            call_count += 1
+
+        manager.get_or_create("fixture", lambda: "v", cleanup=cleanup)
+        manager.teardown_scope(FixtureScope.TEST)
+        manager.teardown_scope(FixtureScope.TEST)  # Second teardown
+
+        assert call_count == 1  # Handler only called once
+
+
+class TestScopedFixtureManagerGetCached:
+    """Tests for get_cached method."""
+
+    @pytest.fixture
+    def manager(self) -> ScopedFixtureManager:
+        """Provide a fresh ScopedFixtureManager."""
+        return ScopedFixtureManager()
+
+    def test_get_cached_returns_fixture_value(self, manager: ScopedFixtureManager) -> None:
+        """get_cached should return FixtureValue wrapper."""
+        manager.get_or_create("fixture", lambda: "value")
+        cached = manager.get_cached("fixture", FixtureScope.TEST)
+
+        assert isinstance(cached, FixtureValue)
+        assert cached.value == "value"
+
+    def test_get_cached_returns_none_for_uncached(self, manager: ScopedFixtureManager) -> None:
+        """get_cached should return None for uncached fixtures."""
+        cached = manager.get_cached("nonexistent", FixtureScope.TEST)
+        assert cached is None
+
+
+class TestScopedFixtureManagerIsCached:
+    """Tests for is_cached method."""
+
+    @pytest.fixture
+    def manager(self) -> ScopedFixtureManager:
+        """Provide a fresh ScopedFixtureManager."""
+        return ScopedFixtureManager()
+
+    def test_is_cached_true_for_cached(self, manager: ScopedFixtureManager) -> None:
+        """is_cached should return True for cached fixtures."""
+        manager.get_or_create("fixture", lambda: "value")
+        assert manager.is_cached("fixture", FixtureScope.TEST) is True
+
+    def test_is_cached_false_for_uncached(self, manager: ScopedFixtureManager) -> None:
+        """is_cached should return False for uncached fixtures."""
+        assert manager.is_cached("fixture", FixtureScope.TEST) is False
+
+    def test_is_cached_scope_specific(self, manager: ScopedFixtureManager) -> None:
+        """is_cached should be scope-specific."""
+        manager.get_or_create("fixture", lambda: "v", FixtureScope.SUITE)
+
+        assert manager.is_cached("fixture", FixtureScope.SUITE) is True
+        assert manager.is_cached("fixture", FixtureScope.TEST) is False
+        assert manager.is_cached("fixture", FixtureScope.SESSION) is False
