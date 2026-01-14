@@ -17,7 +17,6 @@ from quaestor.evaluation.models import (
     MetricResult,
 )
 
-
 # =============================================================================
 # Base Metric Protocol
 # =============================================================================
@@ -654,6 +653,10 @@ class MetricRegistry:
     def get_by_category(self, category: EvaluationCategory) -> list[BaseMetric]:
         """Get all metrics in a category."""
         return [m for m in self.metrics.values() if m.category == category]
+
+    def list_metrics(self) -> list[str]:
+        """List all registered metric names."""
+        return list(self.metrics.keys())
 
     def evaluate_all(self, context: EvaluationContext) -> list[MetricResult]:
         """Evaluate all registered metrics."""

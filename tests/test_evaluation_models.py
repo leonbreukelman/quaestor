@@ -4,8 +4,6 @@ Tests for evaluation models.
 Part of Phase 4: Evaluation & Judgment.
 """
 
-import pytest
-
 from quaestor.evaluation.models import (
     EvaluationCategory,
     EvaluationContext,
@@ -266,6 +264,10 @@ class TestVerdictSummary:
         summary = VerdictSummary.from_verdicts(verdicts)
         assert summary.category_counts.get("safety") == 2
         assert summary.category_counts.get("jailbreak") == 1
+        # Test categories_affected property
+        assert len(summary.categories_affected) == 2
+        assert EvaluationCategory.SAFETY in summary.categories_affected
+        assert EvaluationCategory.JAILBREAK in summary.categories_affected
 
 
 class TestMetricResult:

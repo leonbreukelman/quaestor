@@ -15,7 +15,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
-
 # =============================================================================
 # Severity Levels
 # =============================================================================
@@ -291,6 +290,11 @@ class VerdictSummary(BaseModel):
             summary.overall_status = "pass"
 
         return summary
+
+    @property
+    def categories_affected(self) -> list[EvaluationCategory]:
+        """Get list of affected categories."""
+        return [EvaluationCategory(cat) for cat in self.category_counts]
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""

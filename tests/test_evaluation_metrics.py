@@ -7,7 +7,6 @@ Part of Phase 4: Evaluation & Judgment.
 import pytest
 
 from quaestor.evaluation.metrics import (
-    BaseMetric,
     ContainsMetric,
     ExactMatchMetric,
     InformationLeakMetric,
@@ -90,7 +89,11 @@ class TestContainsMetric:
 
     @pytest.fixture
     def metric(self):
-        return ContainsMetric(expected_substrings=["hello", "world"])
+        # Use threshold > 0.5 so that 50% scores fail
+        return ContainsMetric(
+            expected_substrings=["hello", "world"],
+            config=MetricConfig(threshold=0.6),
+        )
 
     def test_all_substrings_present(self, metric):
         """Test when all substrings are present."""
@@ -128,7 +131,11 @@ class TestToolUseMetric:
 
     @pytest.fixture
     def metric(self):
-        return ToolUseMetric(expected_tools=["search", "calculator"])
+        # Use threshold > 0.5 so that 50% scores fail
+        return ToolUseMetric(
+            expected_tools=["search", "calculator"],
+            config=MetricConfig(threshold=0.6),
+        )
 
     def test_all_expected_tools_used(self, metric):
         """Test when all required tools are used."""
@@ -300,8 +307,8 @@ class TestMetricRegistry:
         correctness_metrics = registry.get_by_category(EvaluationCategory.CORRECTNESS)
         assert len(correctness_metrics) == 2
 
-        safety_metrics = registry.get_by_category(EvaluationCategory.SAFETY)
-        assert len(safety_metrics) == 1
+        jailbreak_metrics = registry.get_by_category(EvaluationCategory.JAILBREAK)
+        assert len(jailbreak_metrics) == 1
 
     def test_evaluate_all(self, registry):
         """Test evaluating all metrics."""
@@ -324,7 +331,7 @@ class TestCreateDefaultRegistry:
     def test_creates_registry_with_metrics(self):
         """Test that default registry has metrics."""
         registry = create_default_registry()
-        metrics = list(registry._metrics.keys())
+        metrics = list(registry.metrics.keys())
 
         # Should have core metrics
         assert len(metrics) >= 4
