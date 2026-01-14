@@ -85,7 +85,7 @@ def search(query: str) -> list:
 
 class Agent:
     """An agent that searches."""
-    
+
     async def run(self, task: str) -> str:
         """Run a task."""
         return ""
@@ -195,7 +195,7 @@ def search(query: str) -> list:
 
 class Agent:
     """An agent."""
-    
+
     def run(self, task: str) -> str:
         """Run a task."""
         return ""

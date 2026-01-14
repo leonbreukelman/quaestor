@@ -508,9 +508,8 @@ class StaticLinter:
             # Check for assignments with secret-like names
             if "=" in line:
                 for pattern in secret_patterns:
-                    if pattern in line_lower:
-                        # Check if it's assigning a string literal
-                        if '= "' in line or "= '" in line:
+                      if pattern in line_lower and ('= "' in line or "= '" in line):
+                          # Check if it's assigning a string literal
                             # Skip if it's reading from env
                             if "os.environ" in line or "os.getenv" in line:
                                 continue

@@ -99,15 +99,15 @@ class AgentState(Enum):
         source = '''
 class ResearchAgent:
     """Research agent implementation."""
-    
+
     async def run(self, query: str) -> str:
         """Main entry point for the agent."""
         return await self.execute(query)
-    
+
     def execute(self, query: str) -> str:
         """Execute a query."""
         return ""
-    
+
     def __call__(self, query: str) -> str:
         """Callable interface."""
         return self.run(query)
@@ -142,31 +142,31 @@ class State(Enum):
 
 class ComplexAgent:
     """A complex agent with many methods."""
-    
+
     @tool
     def search(self, q: str) -> list:
         """Search tool."""
         return []
-    
+
     @tool
     def analyze(self, data: list) -> dict:
         """Analyze tool."""
         return {}
-    
+
     @tool
     def summarize(self, text: str) -> str:
         """Summarize tool."""
         return ""
-    
+
     @tool
     def report(self, analysis: dict) -> str:
         """Report tool."""
         return ""
-    
+
     async def run(self, task: str) -> str:
         """Main entry point."""
         pass
-    
+
     def transition(self, from_state: State, to_state: State) -> None:
         """Handle state transition."""
         pass

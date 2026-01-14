@@ -46,8 +46,8 @@ def main(
 @app.command()
 def analyze(
     path: str = typer.Argument(..., help="Path to agent code or directory"),
-    output: str = typer.Option(None, "--output", "-o", help="Output file for workflow JSON"),
-    verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
+    _output: str = typer.Option(None, "--output", "-o", help="Output file for workflow JSON"),
+    _verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
 ) -> None:
     """
     Analyze agent code and extract workflow definition.
@@ -71,8 +71,8 @@ def analyze(
 @app.command()
 def lint(
     path: str = typer.Argument(..., help="Path to agent code or directory"),
-    fix: bool = typer.Option(False, "--fix", "-f", help="Auto-fix issues where possible"),
-    output_format: str = typer.Option(
+    _fix: bool = typer.Option(False, "--fix", "-f", help="Auto-fix issues where possible"),
+    _output_format: str = typer.Option(
         "console", "--format", help="Output format: console, json, sarif"
     ),
 ) -> None:
@@ -104,8 +104,8 @@ def test(
         "-l",
         help="Test level: unit, integration, scenario, redteam",
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
-    fail_fast: bool = typer.Option(False, "--fail-fast", "-x", help="Stop on first failure"),
+    _verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
+    _fail_fast: bool = typer.Option(False, "--fail-fast", "-x", help="Stop on first failure"),
 ) -> None:
     """
     Run tests against an agent.
@@ -132,10 +132,10 @@ def test(
 @app.command()
 def coverage(
     path: str = typer.Argument(..., help="Path to agent code"),
-    output: str = typer.Option(
+    _output: str = typer.Option(
         "./quaestor-reports", "--output", "-o", help="Report output directory"
     ),
-    format: str = typer.Option("html", "--format", "-f", help="Report format: html, json, console"),
+    _format: str = typer.Option("html", "--format", "-f", help="Report format: html, json, console"),
 ) -> None:
     """
     Generate coverage report for agent testing.
@@ -162,7 +162,7 @@ def coverage(
 @app.command()
 def learn(
     examples_path: str = typer.Argument(..., help="Path to example test cases"),
-    optimize: bool = typer.Option(True, "--optimize", help="Run DSPy optimization"),
+    _optimize: bool = typer.Option(True, "--optimize", help="Run DSPy optimization"),
 ) -> None:
     """
     Bootstrap or optimize Quaestor from examples.

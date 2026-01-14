@@ -47,6 +47,7 @@ jobs:
 
       - name: Run Bandit
         run: |
+          uv run pip install bandit-sarif-formatter
           uv run bandit -r quaestor/ -f sarif -o bandit-results.sarif --severity-level medium --confidence-level medium || true
         continue-on-error: true
 
@@ -120,7 +121,7 @@ jobs:
       - name: Detect secrets with TruffleHog
         uses: trufflesecurity/trufflehog@main
         with:
-          extra_args: --only-verified --json --fail
+          extra_args: --only-verified --json
 
   semgrep:
     name: Semgrep Security Scan

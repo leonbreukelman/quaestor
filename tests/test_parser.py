@@ -80,14 +80,14 @@ def process_data(data: list) -> dict:
         source = '''
 class MyAgent:
     """An agent that does things."""
-    
+
     def __init__(self, name: str):
         self.name = name
-    
+
     async def run(self, task: str) -> str:
         """Run a task."""
         return f"{self.name} completed {task}"
-    
+
     @tool
     def search(self, query: str) -> list:
         """Search for something."""
@@ -203,21 +203,21 @@ from langchain.tools import tool
 
 class ResearchAgent:
     """Agent that researches topics."""
-    
+
     def __init__(self, model: str = "gpt-4"):
         self.model = model
         self.tools = [self.search, self.summarize]
-    
+
     @tool
     def search(self, query: str) -> List[str]:
         """Search for information on a topic."""
         return ["result1", "result2"]
-    
+
     @tool
     async def summarize(self, text: str) -> str:
         """Summarize the given text."""
         return text[:100]
-    
+
     async def run(self, task: str) -> str:
         """Execute the research task."""
         try:
@@ -225,7 +225,7 @@ class ResearchAgent:
             return results
         except Exception as e:
             return f"Error: {e}"
-    
+
     async def _execute(self, task: str) -> str:
         """Internal execution method."""
         return f"Completed: {task}"

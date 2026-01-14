@@ -259,7 +259,7 @@ class AnalysisPipeline:
                 errors=[f"File not found: {path}"],
             )
 
-        if not path.suffix == ".py":
+        if path.suffix != ".py":
             return AnalysisReport(
                 file_path=str(path),
                 errors=[f"Not a Python file: {path}"],
@@ -348,10 +348,7 @@ class AnalysisPipeline:
             ]
 
         # Find all matching files
-        if recursive:
-            files = list(path.rglob(pattern))
-        else:
-            files = list(path.glob(pattern))
+        files = list(path.rglob(pattern)) if recursive else list(path.glob(pattern))
 
         # Analyze each file
         # TODO: Parallel analysis when config.parallel is True

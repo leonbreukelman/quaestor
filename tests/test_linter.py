@@ -36,11 +36,11 @@ def greet(name: str) -> str:
 
 class Greeter:
     """A class that greets people."""
-    
+
     def __init__(self, prefix: str = "Hello"):
         """Initialize with a greeting prefix."""
         self.prefix = prefix
-    
+
     def greet(self, name: str) -> str:
         """Greet someone."""
         return f"{self.prefix}, {name}!"
@@ -262,7 +262,7 @@ class AlsoUndocumented:
         source = """
 def bad_code():
     eval("1+1")  # Should be caught
-    
+
 def missing_docs():  # Should NOT be caught
     pass
 """
@@ -298,7 +298,7 @@ class TestLintResult:
         result = lint_string("""
 def bad():
     eval("code")  # Error: Q031
-    
+
 def undocumented():  # Warning: Q001
     pass
 """)
@@ -330,7 +330,7 @@ def bad():
         result = lint_string("""
 def bad():
     eval("code")
-    
+
 def undocumented():
     pass
 """)

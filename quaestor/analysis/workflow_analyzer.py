@@ -179,10 +179,7 @@ class WorkflowAnalyzer:
     def _is_tool(self, func: FunctionDef) -> bool:
         """Check if a function is a tool."""
         # Check decorators
-        for decorator in func.decorators:
-            if decorator.name in self.TOOL_DECORATORS:
-                return True
-        return False
+        return any(decorator.name in self.TOOL_DECORATORS for decorator in func.decorators)
 
     def _function_to_tool(self, func: FunctionDef) -> DetectedTool:
         """Convert a FunctionDef to a DetectedTool."""
@@ -202,10 +199,9 @@ class WorkflowAnalyzer:
 
         for cls in parsed.classes:
             # Check if it's an Enum class (likely a state enum)
-            if any(base in ["Enum", "str, Enum", "IntEnum"] for base in cls.bases):
-                # Extract enum members as states
-                # This is a simplified extraction - full implementation would parse the class body
-                if cls.body_text:
+              if any(base in ["Enum", "str, Enum", "IntEnum"] for base in cls.bases) and cls.body_text:
+                  # Extract enum members as states
+                  # This is a simplified extraction - full implementation would parse the class body
                     lines = cls.body_text.split("\n")
                     for line in lines:
                         line = line.strip()
@@ -293,8 +289,7 @@ class WorkflowAnalyzer:
         # Check for missing error handling in async methods
         for cls in parsed.classes:
             for method in cls.methods:
-                if method.is_async and method.body_text:
-                    if "await " in method.body_text and "try:" not in method.body_text:
+                  if method.is_async and method.body_text and "await " in method.body_text and "try:" not in method.body_text:
                         recommendations.append(
                             f"Add error handling to async method '{method.name}'"
                         )

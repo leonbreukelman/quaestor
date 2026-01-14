@@ -228,7 +228,9 @@ class TestDesigner(dspy.Module):
 
         return RefineTests
 
-    def forward(self, workflow_spec: WorkflowSpec, level: str, coverage_gaps: list[str] = []):
+    def forward(self, workflow_spec: WorkflowSpec, level: str, coverage_gaps: list[str] = None):
+        if coverage_gaps is None:
+            coverage_gaps = []
         initial = self.design(
             workflow_spec=workflow_spec, test_level=level, coverage_gaps=coverage_gaps
         )
@@ -261,7 +263,7 @@ class QuaestorInvestigator(dspy.Module):
         observations = []
         tool_calls = []
 
-        for turn in range(scenario.max_turns):
+        for _turn in range(scenario.max_turns):
             # Quaestor decides what to do next
             probe_result = self.probe(
                 scenario=scenario, conversation_history=conversation, observations=observations
@@ -362,7 +364,7 @@ class QuaestorOptimizer:
     """
 
     @staticmethod
-    def workflow_analysis_metric(example, prediction, trace=None):
+    def workflow_analysis_metric(example, prediction, _trace=None):
         """
         Metric: Did the workflow analysis correctly identify
         the agent's tools, states, and value proposition?
@@ -373,18 +375,18 @@ class QuaestorOptimizer:
         spec = prediction.workflow_spec
         gold = example.gold_spec
 
-        tool_recall = len(set(t.name for t in spec.tools) & set(t.name for t in gold.tools)) / len(
+        tool_recall = len({t.name for t in spec.tools} & {t.name for t in gold.tools}) / len(
             gold.tools
         )
         state_recall = len(
-            set(s.name for s in spec.states) & set(s.name for s in gold.states)
+            {s.name for s in spec.states} & {s.name for s in gold.states}
         ) / len(gold.states)
         value_match = dspy.evaluate.SemanticF1()(spec.value_proposition, gold.value_proposition)
 
         return (tool_recall + state_recall + value_match) / 3
 
     @staticmethod
-    def test_effectiveness_metric(example, prediction, trace=None):
+    def test_effectiveness_metric(example, prediction, _trace=None):
         """
         Metric: Did the generated tests find real bugs?
 
@@ -401,7 +403,7 @@ class QuaestorOptimizer:
         return tests_that_found_bugs / len(example.known_bugs)
 
     @staticmethod
-    def investigation_efficiency_metric(example, prediction, trace=None):
+    def investigation_efficiency_metric(example, prediction, _trace=None):
         """
         Metric: Did Quaestor find the bug efficiently?
 
@@ -446,25 +448,25 @@ Usage would look like:
 
     # Analyze a workflow (like: ruff check .)
     $ quaestor analyze agents/support/
-    
+
     # Run all tests (like: pytest)
     $ quaestor test agents/support/
-    
+
     # Run specific level
     $ quaestor test agents/support/ --level integration
-    
+
     # Red team only
     $ quaestor redteam agents/support/
-    
+
     # Generate coverage report
     $ quaestor coverage agents/support/
-    
+
     # Watch mode (like: pytest-watch)
     $ quaestor watch agents/support/
-    
+
     # Initialize test suite for new agent
     $ quaestor init agents/new_agent/
-    
+
     # Bootstrap/optimize Quaestor on your codebase
     $ quaestor learn --from-history  # Learn from past test runs
 """
@@ -481,9 +483,9 @@ from quaestor import AgentTestCase, scenario, redteam
 
 class TestSupportAgent(AgentTestCase):
     target = "agents/support/"
-    
+
     # Quaestor auto-generates tests, but you can add explicit ones:
-    
+
     @scenario(level="integration")
     def test_escalation_flow(self, quaestor):
         '''Test that complex issues get escalated properly'''
@@ -494,7 +496,7 @@ class TestSupportAgent(AgentTestCase):
         )
         assert result.reached_state("escalated")
         assert not result.has_finding(severity="error")
-    
+
     @redteam(category="prompt_injection")
     def test_injection_resistance(self, quaestor):
         '''Verify agent doesn't follow injected instructions'''
