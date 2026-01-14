@@ -17,12 +17,10 @@ from quaestor.analysis.models import (
     StateDefinition,
     StateType,
     ToolDefinition,
-    Transition,
 )
 from quaestor.testing.models import (
     Assertion,
     ContainsAssertion,
-    EqualsAssertion,
     StateReachedAssertion,
     TestCase,
     TestSuite,
@@ -155,13 +153,13 @@ class TestDesigner:
         # Generate tool-based tests
         for tool in workflow.tools:
             tool_scenarios = self._generate_tool_scenarios(tool)
-            scenarios.extend(tool_scenarios[:self.config.max_scenarios_per_tool])
+            scenarios.extend(tool_scenarios[: self.config.max_scenarios_per_tool])
 
         # Generate state-based tests
         if self.config.include_state_transitions:
             for state in workflow.states:
                 state_scenarios = self._generate_state_scenarios(state, workflow)
-                scenarios.extend(state_scenarios[:self.config.max_scenarios_per_state])
+                scenarios.extend(state_scenarios[: self.config.max_scenarios_per_state])
 
         # Generate transition tests
         if self.config.include_state_transitions and workflow.transitions:
@@ -282,7 +280,7 @@ class TestDesigner:
     def _generate_state_scenarios(
         self,
         state: StateDefinition,
-        workflow: AgentWorkflow,
+        workflow: AgentWorkflow,  # noqa: ARG002
     ) -> list[TestScenario]:
         """Generate test scenarios for a state."""
         scenarios: list[TestScenario] = []
@@ -337,9 +335,7 @@ class TestDesigner:
 
         return scenarios
 
-    def _generate_transition_scenarios(
-        self, workflow: AgentWorkflow
-    ) -> list[TestScenario]:
+    def _generate_transition_scenarios(self, workflow: AgentWorkflow) -> list[TestScenario]:
         """Generate test scenarios for state transitions."""
         scenarios: list[TestScenario] = []
 
@@ -392,9 +388,11 @@ class TestDesigner:
         )
 
         # Large input test (if tools have text parameters)
-        text_tools = [t for t in workflow.tools if any(
-            p.type in ("str", "string", "text") for p in t.parameters
-        )]
+        text_tools = [
+            t
+            for t in workflow.tools
+            if any(p.type in ("str", "string", "text") for p in t.parameters)
+        ]
         if text_tools:
             tool = text_tools[0]
             scenarios.append(

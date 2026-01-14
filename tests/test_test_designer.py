@@ -15,11 +15,9 @@ from quaestor.testing.test_designer import (
     DesignerConfig,
     DesignResult,
     TestDesigner,
-    TestScenario,
     TestScenarioType,
     design_tests,
 )
-
 
 # =============================================================================
 # Test Fixtures
@@ -279,9 +277,7 @@ class TestScenarioTypes:
         edge_cases = result.by_type.get(TestScenarioType.EDGE_CASE, [])
         assert len(edge_cases) >= 1
 
-    def test_error_handling_scenarios_generated(
-        self, complex_workflow: AgentWorkflow
-    ) -> None:
+    def test_error_handling_scenarios_generated(self, complex_workflow: AgentWorkflow) -> None:
         """Test that error handling scenarios are generated."""
         config = DesignerConfig(use_mock=True, include_error_handling=True)
         designer = TestDesigner(config)
@@ -291,9 +287,7 @@ class TestScenarioTypes:
         error_scenarios = result.by_type.get(TestScenarioType.ERROR_HANDLING, [])
         assert len(error_scenarios) >= 1
 
-    def test_state_transition_scenarios_generated(
-        self, simple_workflow: AgentWorkflow
-    ) -> None:
+    def test_state_transition_scenarios_generated(self, simple_workflow: AgentWorkflow) -> None:
         """Test that state transition scenarios are generated."""
         config = DesignerConfig(use_mock=True, include_state_transitions=True)
         designer = TestDesigner(config)
@@ -374,9 +368,7 @@ class TestTestSuiteGeneration:
         assert result.test_suite is not None
         assert len(result.test_suite.test_cases) >= 1
 
-    def test_suite_test_cases_match_scenarios(
-        self, simple_workflow: AgentWorkflow
-    ) -> None:
+    def test_suite_test_cases_match_scenarios(self, simple_workflow: AgentWorkflow) -> None:
         """Test that suite test cases match scenarios."""
         config = DesignerConfig(use_mock=True)
         designer = TestDesigner(config)
@@ -437,9 +429,7 @@ class TestDesignResult:
         total = sum(len(scenarios) for scenarios in by_type.values())
         assert total == result.scenario_count
 
-    def test_summary_includes_workflow_name(
-        self, simple_workflow: AgentWorkflow
-    ) -> None:
+    def test_summary_includes_workflow_name(self, simple_workflow: AgentWorkflow) -> None:
         """Test that summary includes workflow name."""
         config = DesignerConfig(use_mock=True)
         designer = TestDesigner(config)
@@ -465,9 +455,7 @@ class TestConvenienceFunctions:
         assert result.scenario_count >= 1
         assert result.test_suite is not None
 
-    def test_design_tests_defaults_to_llm_mode(
-        self, simple_workflow: AgentWorkflow
-    ) -> None:
+    def test_design_tests_defaults_to_llm_mode(self, simple_workflow: AgentWorkflow) -> None:
         """Test that design_tests defaults to LLM mode (but falls back to mock)."""
         result = design_tests(simple_workflow, use_mock=False)
 
@@ -503,7 +491,8 @@ class TestInputGeneration:
 
         # Find a positive scenario for this tool
         positive_scenarios = [
-            s for s in result.scenarios
+            s
+            for s in result.scenarios
             if s.scenario_type == TestScenarioType.POSITIVE and s.target_tool == "test_tool"
         ]
         assert len(positive_scenarios) >= 1
@@ -528,7 +517,8 @@ class TestInputGeneration:
         result = designer.design(workflow)
 
         positive_scenarios = [
-            s for s in result.scenarios
+            s
+            for s in result.scenarios
             if s.scenario_type == TestScenarioType.POSITIVE and s.target_tool == "test_tool"
         ]
         assert len(positive_scenarios) >= 1
