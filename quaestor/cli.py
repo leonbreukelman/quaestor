@@ -5,9 +5,23 @@ Provides commands for analyzing, linting, testing, and reporting on AI agents.
 Built on Smactorio governance infrastructure.
 """
 
+import json
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
+from rich.tree import Tree
+
+from quaestor.analysis.linter import Severity
+from quaestor.analysis.pipeline import (
+    AnalysisLevel,
+    AnalysisPipeline,
+    AnalysisReport,
+    PipelineConfig,
+)
+from quaestor.analysis.workflow_analyzer import AnalyzerConfig
 
 app = typer.Typer(
     name="quaestor",
@@ -46,8 +60,10 @@ def main(
 @app.command()
 def analyze(
     path: str = typer.Argument(..., help="Path to agent code or directory"),
-    _output: str = typer.Option(None, "--output", "-o", help="Output file for workflow JSON"),
-    _verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
+    output: str = typer.Option(None, "--output", "-o", help="Output file for workflow JSON"),
+    verbose: bool = typer.Option(False, "--verbose", "-V", help="Verbose output"),
+    mock: bool = typer.Option(False, "--mock", help="Use mock mode (no LLM calls)"),
+    format_: str = typer.Option("console", "--format", "-f", help="Output format: console, json"),
 ) -> None:
     """
     Analyze agent code and extract workflow definition.
@@ -55,26 +71,60 @@ def analyze(
     Uses DSPy-powered WorkflowAnalyzer to understand agent structure,
     tools, states, and transitions.
     """
+    target_path = Path(path)
+
+    if not target_path.exists():
+        console.print(f"[red]Error:[/red] Path not found: {path}")
+        raise typer.Exit(1)
+
+    # Configure pipeline
+    analyzer_config = AnalyzerConfig(use_mock=mock) if mock else None
+    config = PipelineConfig(
+        level=AnalysisLevel.ANALYZE,
+        analyzer_config=analyzer_config,
+    )
+    pipeline = AnalysisPipeline(config)
+
     console.print(
         Panel(
-            f"[bold]Analyzing:[/bold] {path}",
+            f"[bold]Analyzing:[/bold] {path}"
+            + ("\n[dim]Mock mode: LLM calls disabled[/dim]" if mock else ""),
             title="🔍 Quaestor Analyzer",
             border_style="blue",
         )
     )
 
-    # TODO: Implement WorkflowAnalyzer integration
-    console.print("[yellow]⚠️  Analysis engine not yet implemented[/yellow]")
-    console.print("[dim]See TODO.md Phase 1 for implementation roadmap[/dim]")
+    # Analyze file(s)
+    if target_path.is_file():
+        reports = [pipeline.analyze_file(target_path)]
+    else:
+        reports = pipeline.analyze_directory(target_path)
+
+    # Handle output
+    if format_ == "json" or output:
+        json_output = [report.to_dict() for report in reports]
+        if output:
+            Path(output).write_text(json.dumps(json_output, indent=2))
+            console.print(f"[green]✓[/green] Output written to {output}")
+        else:
+            console.print(json.dumps(json_output, indent=2))
+    else:
+        _display_analysis_reports(reports, verbose)
+
+    # Summary
+    error_count = sum(1 for r in reports if r.has_errors)
+    if error_count > 0:
+        console.print(f"\n[red]⚠ {error_count} file(s) had analysis errors[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
 def lint(
     path: str = typer.Argument(..., help="Path to agent code or directory"),
-    _fix: bool = typer.Option(False, "--fix", "-f", help="Auto-fix issues where possible"),
-    _output_format: str = typer.Option(
-        "console", "--format", help="Output format: console, json, sarif"
+    format_: str = typer.Option(
+        "console", "--format", "-f", help="Output format: console, json, sarif"
     ),
+    output: str = typer.Option(None, "--output", "-o", help="Output file for results"),
 ) -> None:
     """
     Run static analysis on agent code (no LLM calls).
@@ -82,6 +132,16 @@ def lint(
     Fast feedback on common anti-patterns, security issues,
     and best practice violations.
     """
+    target_path = Path(path)
+
+    if not target_path.exists():
+        console.print(f"[red]Error:[/red] Path not found: {path}")
+        raise typer.Exit(1)
+
+    # Configure pipeline for lint-only
+    config = PipelineConfig(level=AnalysisLevel.LINT)
+    pipeline = AnalysisPipeline(config)
+
     console.print(
         Panel(
             f"[bold]Linting:[/bold] {path}",
@@ -90,9 +150,39 @@ def lint(
         )
     )
 
-    # TODO: Implement static linter
-    console.print("[yellow]⚠️  Linter not yet implemented[/yellow]")
-    console.print("[dim]See TODO.md Phase 1 for implementation roadmap[/dim]")
+    # Analyze file(s)
+    if target_path.is_file():
+        reports = [pipeline.analyze_file(target_path)]
+    else:
+        reports = pipeline.analyze_directory(target_path)
+
+    # Aggregate lint results
+    total_issues = sum(len(r.lint_result.issues) if r.lint_result else 0 for r in reports)
+
+    # Handle output
+    if format_ == "json" or (output and output.endswith(".json")):
+        json_output = _lint_reports_to_json(reports)
+        if output:
+            Path(output).write_text(json.dumps(json_output, indent=2))
+            console.print(f"[green]✓[/green] Output written to {output}")
+        else:
+            console.print(json.dumps(json_output, indent=2))
+    elif format_ == "sarif" or (output and output.endswith(".sarif")):
+        console.print("[yellow]⚠️  SARIF output not yet implemented[/yellow]")
+        console.print("[dim]See TODO.md Phase 5 for implementation roadmap[/dim]")
+    else:
+        _display_lint_reports(reports)
+
+    # Summary
+    if total_issues > 0:
+        error_count = sum(
+            sum(1 for issue in r.lint_result.issues if issue.severity == Severity.ERROR)
+            for r in reports
+            if r.lint_result
+        )
+        console.print(f"\n[bold]Found {total_issues} issue(s)[/bold]")
+        if error_count > 0:
+            raise typer.Exit(1)
 
 
 @app.command()
@@ -206,6 +296,146 @@ def init(
     # TODO: Implement config initialization
     console.print("[yellow]⚠️  Init not yet implemented[/yellow]")
     console.print("[dim]Creates quaestor.yaml with project defaults[/dim]")
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def _display_analysis_reports(reports: list[AnalysisReport], verbose: bool = False) -> None:
+    """Display analysis reports in a human-readable format."""
+    for report in reports:
+        if report.has_errors:
+            console.print(f"\n[red]✗ {report.file_path}[/red]")
+            for error in report.errors:
+                console.print(f"  [red]{error}[/red]")
+            continue
+
+        console.print(f"\n[green]✓ {report.file_path}[/green]")
+        console.print(f"  [dim]{report.source_lines} lines[/dim]")
+
+        # Show parsed structure
+        if report.parsed and verbose:
+            tree = Tree("[bold]Parsed Structure[/bold]")
+            if report.parsed.functions:
+                funcs = tree.add("📦 Functions")
+                for func in report.parsed.functions:
+                    func_label = f"{'async ' if func.is_async else ''}{func.name}()"
+                    funcs.add(func_label)
+            if report.parsed.classes:
+                classes = tree.add("🏛️ Classes")
+                for cls in report.parsed.classes:
+                    cls_node = classes.add(cls.name)
+                    for method in cls.methods:
+                        cls_node.add(f"{'async ' if method.is_async else ''}{method.name}()")
+            console.print(tree)
+
+        # Show workflow analysis
+        if report.workflow_analysis:
+            console.print("\n  [bold]Workflow Analysis:[/bold]")
+            console.print(f"    [cyan]Summary:[/cyan] {report.workflow_analysis.summary}")
+            console.print(
+                f"    [cyan]Complexity:[/cyan] {report.workflow_analysis.complexity_score}/10"
+            )
+
+            if report.workflow_analysis.tools_detected:
+                console.print(
+                    f"    [cyan]Tools:[/cyan] {len(report.workflow_analysis.tools_detected)}"
+                )
+                for tool in report.workflow_analysis.tools_detected:
+                    console.print(f"      • {tool.name}: {tool.description}")
+
+            if report.workflow_analysis.states_detected:
+                console.print(
+                    f"    [cyan]States:[/cyan] {len(report.workflow_analysis.states_detected)}"
+                )
+                for state in report.workflow_analysis.states_detected:
+                    console.print(f"      • {state.name} ({state.type})")
+
+            if report.workflow_analysis.recommendations:
+                console.print("    [cyan]Recommendations:[/cyan]")
+                for rec in report.workflow_analysis.recommendations:
+                    console.print(f"      💡 {rec}")
+
+        # Show lint issues
+        if report.has_lint_issues and report.lint_result:
+            console.print(f"\n  [bold]Lint Issues:[/bold] {len(report.lint_result.issues)}")
+            for issue in report.lint_result.issues:
+                severity_color = {
+                    Severity.ERROR: "red",
+                    Severity.WARNING: "yellow",
+                    Severity.INFO: "blue",
+                }.get(issue.severity, "white")
+                console.print(
+                    f"    [{severity_color}]{issue.severity.value.upper()}[/{severity_color}] "
+                    f"L{issue.line}: {issue.message} [{issue.rule_id}]"
+                )
+
+
+def _display_lint_reports(reports: list[AnalysisReport]) -> None:
+    """Display lint results in a human-readable format."""
+    for report in reports:
+        if report.has_errors:
+            console.print(f"\n[red]✗ {report.file_path}[/red]")
+            for error in report.errors:
+                console.print(f"  [red]{error}[/red]")
+            continue
+
+        if not report.lint_result or not report.lint_result.issues:
+            console.print(f"[green]✓ {report.file_path}[/green] - No issues")
+            continue
+
+        console.print(f"\n[yellow]⚠ {report.file_path}[/yellow]")
+
+        # Group issues by severity
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Line", style="dim", width=6)
+        table.add_column("Severity", width=10)
+        table.add_column("Rule", style="cyan", width=20)
+        table.add_column("Message")
+
+        for issue in report.lint_result.issues:
+            severity_color = {
+                Severity.ERROR: "red",
+                Severity.WARNING: "yellow",
+                Severity.INFO: "blue",
+            }.get(issue.severity, "white")
+            table.add_row(
+                str(issue.line),
+                f"[{severity_color}]{issue.severity.value}[/{severity_color}]",
+                issue.rule_id,
+                issue.message,
+            )
+
+        console.print(table)
+
+
+def _lint_reports_to_json(reports: list[AnalysisReport]) -> list[dict[str, object]]:
+    """Convert lint reports to JSON-serializable format."""
+    result: list[dict[str, object]] = []
+    for report in reports:
+        issues: list[dict[str, object]] = []
+        if report.lint_result:
+            issues = [
+                {
+                    "line": issue.line,
+                    "column": issue.column,
+                    "severity": issue.severity.value,
+                    "rule_id": issue.rule_id,
+                    "category": issue.category.value,
+                    "message": issue.message,
+                    "suggestion": issue.suggestion,
+                }
+                for issue in report.lint_result.issues
+            ]
+        report_dict: dict[str, object] = {
+            "file": report.file_path,
+            "errors": report.errors,
+            "issues": issues,
+        }
+        result.append(report_dict)
+    return result
 
 
 if __name__ == "__main__":

@@ -30,10 +30,10 @@ As a **test developer**, I want to **retrieve a cached fixture value or create a
         nonlocal call_count
         call_count += 1
         return f"value_{call_count}"
-    
+
     result1 = manager.get_or_create("test_fixture", registry, factory)
     result2 = manager.get_or_create("test_fixture", registry, factory)
-    
+
     assert result1 == result2 == "value_1"
     assert call_count == 1
 
@@ -53,20 +53,20 @@ As a **test framework integrator**, I want to **destroy all fixtures at a scope 
     manager = ScopedFixtureManager()
     registry = FixtureRegistry()
     cleanup_called = False
-    
+
     def factory():
         return "test_value"
-    
+
     manager.get_or_create("fixture", registry, factory, scope=FixtureScope.FUNCTION)
     manager.teardown_scope(FixtureScope.FUNCTION)
-    
+
     # Fixture should be recreated after teardown
     call_count = 0
     def counting_factory():
         nonlocal call_count
         call_count += 1
         return call_count
-    
+
     manager.get_or_create("fixture", registry, counting_factory, scope=FixtureScope.FUNCTION)
     assert call_count == 1
 
@@ -85,13 +85,13 @@ As a **test developer**, I want to **access a unique test identifier fixture**, 
 **Independent Test**: def test_builtin_test_id_is_unique():
     manager = ScopedFixtureManager()
     registry = FixtureRegistry()
-    
+
     test_id_1 = manager.get_or_create("test_id", registry, None)
-    
+
     manager.teardown_scope(FixtureScope.FUNCTION)
-    
+
     test_id_2 = manager.get_or_create("test_id", registry, None)
-    
+
     assert isinstance(test_id_1, str)
     assert isinstance(test_id_2, str)
     assert test_id_1 != test_id_2
@@ -111,17 +111,17 @@ As a **test developer**, I want to **access a temporary directory that is automa
 **Independent Test**: def test_builtin_temp_dir_is_cleaned_up():
     manager = ScopedFixtureManager()
     registry = FixtureRegistry()
-    
+
     temp_dir = manager.get_or_create("temp_dir", registry, None)
-    
+
     assert temp_dir.exists()
     assert temp_dir.is_dir()
-    
+
     test_file = temp_dir / "test.txt"
     test_file.write_text("test content")
-    
+
     manager.teardown_scope(FixtureScope.FUNCTION)
-    
+
     assert not temp_dir.exists()
 
 **Acceptance Criteria**:
@@ -139,13 +139,13 @@ As a **test developer**, I want to **use async factory functions to create fixtu
 **Independent Test**: async def test_async_factory_support():
     manager = ScopedFixtureManager()
     registry = FixtureRegistry()
-    
+
     async def async_factory():
         await asyncio.sleep(0.01)
         return "async_value"
-    
+
     result = await manager.get_or_create("async_fixture", registry, async_factory, is_async=True)
-    
+
     assert result == "async_value"
 
 **Acceptance Criteria**:
@@ -163,11 +163,11 @@ As a **test framework integrator**, I want to **use ScopedFixtureManager with ex
 **Independent Test**: def test_integration_with_fixture_registry():
     registry = FixtureRegistry()
     registry.register("existing_fixture", lambda: "existing_value", scope=FixtureScope.MODULE)
-    
+
     manager = ScopedFixtureManager()
-    
+
     result = manager.get_or_create("existing_fixture", registry, registry.get_factory("existing_fixture"))
-    
+
     assert result == "existing_value"
 
 **Acceptance Criteria**:
