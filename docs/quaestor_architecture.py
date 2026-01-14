@@ -378,9 +378,9 @@ class QuaestorOptimizer:
         tool_recall = len({t.name for t in spec.tools} & {t.name for t in gold.tools}) / len(
             gold.tools
         )
-        state_recall = len(
-            {s.name for s in spec.states} & {s.name for s in gold.states}
-        ) / len(gold.states)
+        state_recall = len({s.name for s in spec.states} & {s.name for s in gold.states}) / len(
+            gold.states
+        )
         value_match = dspy.evaluate.SemanticF1()(spec.value_proposition, gold.value_proposition)
 
         return (tool_recall + state_recall + value_match) / 3

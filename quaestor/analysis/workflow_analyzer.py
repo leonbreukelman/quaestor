@@ -199,22 +199,25 @@ class WorkflowAnalyzer:
 
         for cls in parsed.classes:
             # Check if it's an Enum class (likely a state enum)
-              if any(base in ["Enum", "str, Enum", "IntEnum"] for base in cls.bases) and cls.body_text:
-                  # Extract enum members as states
-                  # This is a simplified extraction - full implementation would parse the class body
-                    lines = cls.body_text.split("\n")
-                    for line in lines:
-                        line = line.strip()
-                        if "=" in line and not line.startswith("#"):
-                            name = line.split("=")[0].strip()
-                            if name and name.isupper():
-                                state_type = self._infer_state_type(name)
-                                states.append(
-                                    DetectedState(
-                                        name=name,
-                                        type=state_type,
-                                    )
+            if (
+                any(base in ["Enum", "str, Enum", "IntEnum"] for base in cls.bases)
+                and cls.body_text
+            ):
+                # Extract enum members as states
+                # This is a simplified extraction - full implementation would parse the class body
+                lines = cls.body_text.split("\n")
+                for line in lines:
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        name = line.split("=")[0].strip()
+                        if name and name.isupper():
+                            state_type = self._infer_state_type(name)
+                            states.append(
+                                DetectedState(
+                                    name=name,
+                                    type=state_type,
                                 )
+                            )
 
         return states
 
@@ -289,10 +292,13 @@ class WorkflowAnalyzer:
         # Check for missing error handling in async methods
         for cls in parsed.classes:
             for method in cls.methods:
-                  if method.is_async and method.body_text and "await " in method.body_text and "try:" not in method.body_text:
-                        recommendations.append(
-                            f"Add error handling to async method '{method.name}'"
-                        )
+                if (
+                    method.is_async
+                    and method.body_text
+                    and "await " in method.body_text
+                    and "try:" not in method.body_text
+                ):
+                    recommendations.append(f"Add error handling to async method '{method.name}'")
 
         # Check for state machine patterns without complete coverage
         if states:

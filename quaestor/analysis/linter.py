@@ -508,20 +508,20 @@ class StaticLinter:
             # Check for assignments with secret-like names
             if "=" in line:
                 for pattern in secret_patterns:
-                      if pattern in line_lower and ('= "' in line or "= '" in line):
-                          # Check if it's assigning a string literal
-                            # Skip if it's reading from env
-                            if "os.environ" in line or "os.getenv" in line:
-                                continue
-                            self._add_issue(
-                                result,
-                                "Q030",
-                                f"Potential hardcoded secret in assignment containing '{pattern}'",
-                                i,
-                                suggestion="Use environment variables or a secrets manager",
-                                code_snippet=line.strip()[:60] + "...",
-                            )
-                            break
+                    if pattern in line_lower and ('= "' in line or "= '" in line):
+                        # Check if it's assigning a string literal
+                        # Skip if it's reading from env
+                        if "os.environ" in line or "os.getenv" in line:
+                            continue
+                        self._add_issue(
+                            result,
+                            "Q030",
+                            f"Potential hardcoded secret in assignment containing '{pattern}'",
+                            i,
+                            suggestion="Use environment variables or a secrets manager",
+                            code_snippet=line.strip()[:60] + "...",
+                        )
+                        break
 
     def _check_unsafe_eval(self, parsed: ParsedCode, result: LintResult) -> None:
         """Check for use of eval() or exec()."""

@@ -135,7 +135,9 @@ def coverage(
     _output: str = typer.Option(
         "./quaestor-reports", "--output", "-o", help="Report output directory"
     ),
-    _format: str = typer.Option("html", "--format", "-f", help="Report format: html, json, console"),
+    _format: str = typer.Option(
+        "html", "--format", "-f", help="Report format: html, json, console"
+    ),
 ) -> None:
     """
     Generate coverage report for agent testing.
