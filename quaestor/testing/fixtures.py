@@ -292,3 +292,146 @@ class FixtureRegistry:
     def __repr__(self) -> str:
         """Return a string representation of the registry."""
         return f"FixtureRegistry({len(self._fixtures)} fixtures)"
+
+
+# =============================================================================
+# Custom Exceptions for Dependency Resolution
+# =============================================================================
+
+
+class CyclicDependencyError(ValueError):
+    """Raised when circular dependencies are detected in fixtures."""
+
+    def __init__(self, cycle: list[str]) -> None:
+        self.cycle = cycle
+        cycle_str = " -> ".join(cycle)
+        super().__init__(f"Circular dependency detected: {cycle_str}")
+
+
+# =============================================================================
+# Fixture Resolver
+# =============================================================================
+
+
+class FixtureResolver:
+    """Resolves fixture dependencies and validates dependency graphs.
+
+    Performs topological sorting to determine the correct fixture initialization
+    order and validates that all fixture dependencies exist and are free of
+    circular references.
+
+    Note: This resolver does NOT implement scope management or value caching.
+    Those concerns are handled by separate components.
+
+    Example:
+        >>> registry = FixtureRegistry()
+        >>> registry.register(FixtureDefinition(name="db", scope=FixtureScope.SESSION))
+        >>> registry.register(FixtureDefinition(name="session", dependencies=["db"]))
+        >>> resolver = FixtureResolver()
+        >>> resolver.resolve("session", registry)
+        ['db', 'session']
+    """
+
+    def resolve(self, name: str, registry: FixtureRegistry) -> list[str]:
+        """Resolve a fixture's complete dependency chain in topological order.
+
+        Performs depth-first search to build a topologically sorted list of
+        fixture names, where dependencies appear before dependents.
+
+        Args:
+            name: The name of the fixture to resolve.
+            registry: The fixture registry to look up definitions.
+
+        Returns:
+            List of fixture names in topologically sorted order (dependencies first).
+            The requested fixture name appears last.
+
+        Raises:
+            FixtureNotFoundError: If the fixture or any dependency doesn't exist.
+            CyclicDependencyError: If circular dependencies are detected.
+        """
+        if not registry.has(name):
+            raise FixtureNotFoundError(name)
+
+        result: list[str] = []
+        visiting: set[str] = set()  # Currently in recursion stack (for cycle detection)
+        visited: set[str] = set()  # Completely processed
+
+        self._resolve_recursive(name, registry, result, visiting, visited, [name])
+        return result
+
+    def _resolve_recursive(
+        self,
+        name: str,
+        registry: FixtureRegistry,
+        result: list[str],
+        visiting: set[str],
+        visited: set[str],
+        path: list[str],
+    ) -> None:
+        """Recursively resolve dependencies using DFS.
+
+        Args:
+            name: Current fixture name being resolved.
+            registry: The fixture registry.
+            result: Accumulator for the topologically sorted result.
+            visiting: Set of fixtures currently in the recursion stack.
+            visited: Set of fixtures completely processed.
+            path: Current path for cycle detection error messages.
+        """
+        if name in visited:
+            return
+
+        if name in visiting:
+            # Found a cycle - extract the cycle path for error message
+            cycle_start = path.index(name)
+            cycle = path[cycle_start:] + [name]
+            raise CyclicDependencyError(cycle)
+
+        visiting.add(name)
+
+        definition = registry.get(name)
+        for dep in definition.dependencies:
+            if not registry.has(dep):
+                raise FixtureNotFoundError(dep)
+            self._resolve_recursive(dep, registry, result, visiting, visited, path + [dep])
+
+        visiting.remove(name)
+        visited.add(name)
+        result.append(name)
+
+    def validate_dependencies(self, registry: FixtureRegistry) -> list[str]:
+        """Validate that all fixtures in a registry have valid dependencies.
+
+        Checks all fixtures for missing dependencies and circular references.
+        Collects all validation errors rather than stopping at the first one.
+
+        Args:
+            registry: The fixture registry to validate.
+
+        Returns:
+            List of validation error messages. Empty list if all valid.
+        """
+        errors: list[str] = []
+
+        # Check for missing dependencies
+        for fixture_name in registry:
+            definition = registry.get(fixture_name)
+            for dep in definition.dependencies:
+                if not registry.has(dep):
+                    errors.append(
+                        f"Fixture '{fixture_name}' depends on " f"non-existent fixture '{dep}'"
+                    )
+
+        # Check for circular dependencies (only if no missing deps)
+        if not errors:
+            for fixture_name in registry:
+                try:
+                    self.resolve(fixture_name, registry)
+                except CyclicDependencyError as e:
+                    cycle_str = " -> ".join(e.cycle)
+                    error_msg = f"Circular dependency: {cycle_str}"
+                    if error_msg not in errors:  # Avoid duplicate cycle reports
+                        errors.append(error_msg)
+
+        return errors

@@ -5,10 +5,12 @@ Test generation and execution for AI agents.
 """
 
 from quaestor.testing.fixtures import (
+    CyclicDependencyError,
     DuplicateFixtureError,
     FixtureDefinition,
     FixtureNotFoundError,
     FixtureRegistry,
+    FixtureResolver,
     FixtureScope,
     FixtureValue,
 )
@@ -44,11 +46,13 @@ __all__ = [
     "TestCase",
     "TestResult",
     "TestSuite",
-    # Fixture models
+    # Fixture models and errors
+    "CyclicDependencyError",
     "DuplicateFixtureError",
     "FixtureDefinition",
     "FixtureNotFoundError",
     "FixtureRegistry",
+    "FixtureResolver",
     "FixtureScope",
     "FixtureValue",
 ]

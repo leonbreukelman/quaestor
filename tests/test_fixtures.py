@@ -2,7 +2,8 @@
 Tests for quaestor.testing.fixtures module.
 
 Comprehensive tests for FixtureScope, FixtureDefinition, FixtureValue,
-and FixtureRegistry. Tests validation, serialization, and model behavior.
+FixtureRegistry, and FixtureResolver. Tests validation, serialization,
+dependency resolution, and model behavior.
 """
 
 import json
@@ -12,10 +13,12 @@ import pytest
 from pydantic import ValidationError
 
 from quaestor.testing.fixtures import (
+    CyclicDependencyError,
     DuplicateFixtureError,
     FixtureDefinition,
     FixtureNotFoundError,
     FixtureRegistry,
+    FixtureResolver,
     FixtureScope,
     FixtureValue,
 )
@@ -747,3 +750,261 @@ class TestFixtureRegistryDunderMethods:
 
         registry.register(FixtureDefinition(name="test2"))
         assert "2 fixtures" in repr(registry)
+
+
+# =============================================================================
+# FixtureResolver Tests
+# =============================================================================
+
+
+class TestFixtureResolver:
+    """Tests for FixtureResolver class."""
+
+    @pytest.fixture
+    def resolver(self) -> FixtureResolver:
+        """Create a fresh resolver for each test."""
+        return FixtureResolver()
+
+    @pytest.fixture
+    def registry(self) -> FixtureRegistry:
+        """Create a fresh registry for each test."""
+        return FixtureRegistry()
+
+    def test_resolve_fixture_no_dependencies(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Fixture with no dependencies should return single-element list."""
+        registry.register(FixtureDefinition(name="standalone"))
+
+        result = resolver.resolve("standalone", registry)
+
+        assert result == ["standalone"]
+
+    def test_resolve_single_dependency(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Fixture with one dependency should return both in order."""
+        registry.register(FixtureDefinition(name="base"))
+        registry.register(FixtureDefinition(name="dependent", dependencies=["base"]))
+
+        result = resolver.resolve("dependent", registry)
+
+        assert result == ["base", "dependent"]
+
+    def test_resolve_chain_of_dependencies(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Chain A->B->C should resolve to [C, B, A]."""
+        registry.register(FixtureDefinition(name="c"))
+        registry.register(FixtureDefinition(name="b", dependencies=["c"]))
+        registry.register(FixtureDefinition(name="a", dependencies=["b"]))
+
+        result = resolver.resolve("a", registry)
+
+        assert result == ["c", "b", "a"]
+
+    def test_resolve_multiple_dependencies(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Fixture with multiple dependencies should include all."""
+        registry.register(FixtureDefinition(name="dep1"))
+        registry.register(FixtureDefinition(name="dep2"))
+        registry.register(FixtureDefinition(name="main", dependencies=["dep1", "dep2"]))
+
+        result = resolver.resolve("main", registry)
+
+        # main should be last, deps should come first
+        assert result[-1] == "main"
+        assert "dep1" in result
+        assert "dep2" in result
+        assert result.index("dep1") < result.index("main")
+        assert result.index("dep2") < result.index("main")
+
+    def test_resolve_diamond_dependency(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Diamond pattern (A->B,C; B->D; C->D) should include D only once."""
+        registry.register(FixtureDefinition(name="d"))
+        registry.register(FixtureDefinition(name="b", dependencies=["d"]))
+        registry.register(FixtureDefinition(name="c", dependencies=["d"]))
+        registry.register(FixtureDefinition(name="a", dependencies=["b", "c"]))
+
+        result = resolver.resolve("a", registry)
+
+        # d should appear only once
+        assert result.count("d") == 1
+        # a should be last
+        assert result[-1] == "a"
+        # d should come before b and c
+        assert result.index("d") < result.index("b")
+        assert result.index("d") < result.index("c")
+
+    def test_resolve_nonexistent_fixture(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Resolving non-existent fixture should raise FixtureNotFoundError."""
+        with pytest.raises(FixtureNotFoundError) as exc_info:
+            resolver.resolve("nonexistent", registry)
+
+        assert exc_info.value.name == "nonexistent"
+
+    def test_resolve_missing_dependency(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Missing dependency should raise FixtureNotFoundError."""
+        registry.register(FixtureDefinition(name="dependent", dependencies=["missing"]))
+
+        with pytest.raises(FixtureNotFoundError) as exc_info:
+            resolver.resolve("dependent", registry)
+
+        assert exc_info.value.name == "missing"
+
+
+class TestFixtureResolverCycles:
+    """Tests for cycle detection in FixtureResolver."""
+
+    @pytest.fixture
+    def resolver(self) -> FixtureResolver:
+        """Create a fresh resolver for each test."""
+        return FixtureResolver()
+
+    @pytest.fixture
+    def registry(self) -> FixtureRegistry:
+        """Create a fresh registry for each test."""
+        return FixtureRegistry()
+
+    def test_detect_direct_cycle(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Direct cycle A->B->A should raise CyclicDependencyError."""
+        registry.register(FixtureDefinition(name="a", dependencies=["b"]))
+        registry.register(FixtureDefinition(name="b", dependencies=["a"]))
+
+        with pytest.raises(CyclicDependencyError) as exc_info:
+            resolver.resolve("a", registry)
+
+        assert "a" in exc_info.value.cycle
+        assert "b" in exc_info.value.cycle
+
+    def test_detect_indirect_cycle(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Indirect cycle A->B->C->A should raise CyclicDependencyError."""
+        registry.register(FixtureDefinition(name="a", dependencies=["b"]))
+        registry.register(FixtureDefinition(name="b", dependencies=["c"]))
+        registry.register(FixtureDefinition(name="c", dependencies=["a"]))
+
+        with pytest.raises(CyclicDependencyError) as exc_info:
+            resolver.resolve("a", registry)
+
+        # All three should be in the cycle
+        assert "a" in exc_info.value.cycle
+        assert "b" in exc_info.value.cycle
+        assert "c" in exc_info.value.cycle
+
+    def test_detect_self_referential(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Self-referential A->A should raise CyclicDependencyError."""
+        registry.register(FixtureDefinition(name="a", dependencies=["a"]))
+
+        with pytest.raises(CyclicDependencyError) as exc_info:
+            resolver.resolve("a", registry)
+
+        assert "a" in exc_info.value.cycle
+
+    def test_cycle_error_message(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """CyclicDependencyError message should identify the cycle."""
+        registry.register(FixtureDefinition(name="x", dependencies=["y"]))
+        registry.register(FixtureDefinition(name="y", dependencies=["x"]))
+
+        with pytest.raises(CyclicDependencyError) as exc_info:
+            resolver.resolve("x", registry)
+
+        error_msg = str(exc_info.value)
+        assert "x" in error_msg
+        assert "y" in error_msg
+        assert "Circular dependency" in error_msg
+
+
+class TestFixtureResolverValidation:
+    """Tests for validate_dependencies method."""
+
+    @pytest.fixture
+    def resolver(self) -> FixtureResolver:
+        """Create a fresh resolver for each test."""
+        return FixtureResolver()
+
+    @pytest.fixture
+    def registry(self) -> FixtureRegistry:
+        """Create a fresh registry for each test."""
+        return FixtureRegistry()
+
+    def test_validate_empty_registry(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Empty registry should return no errors."""
+        errors = resolver.validate_dependencies(registry)
+        assert errors == []
+
+    def test_validate_valid_dependencies(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Valid dependencies should return no errors."""
+        registry.register(FixtureDefinition(name="base"))
+        registry.register(FixtureDefinition(name="dependent", dependencies=["base"]))
+
+        errors = resolver.validate_dependencies(registry)
+        assert errors == []
+
+    def test_validate_missing_dependency(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Missing dependency should be reported."""
+        registry.register(FixtureDefinition(name="broken", dependencies=["missing"]))
+
+        errors = resolver.validate_dependencies(registry)
+
+        assert len(errors) == 1
+        assert "broken" in errors[0]
+        assert "missing" in errors[0]
+
+    def test_validate_multiple_missing(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Multiple missing dependencies should all be reported."""
+        registry.register(FixtureDefinition(name="a", dependencies=["missing1"]))
+        registry.register(FixtureDefinition(name="b", dependencies=["missing2"]))
+
+        errors = resolver.validate_dependencies(registry)
+
+        assert len(errors) == 2
+        assert any("missing1" in e for e in errors)
+        assert any("missing2" in e for e in errors)
+
+    def test_validate_circular_dependency(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Circular dependencies should be reported."""
+        registry.register(FixtureDefinition(name="x", dependencies=["y"]))
+        registry.register(FixtureDefinition(name="y", dependencies=["x"]))
+
+        errors = resolver.validate_dependencies(registry)
+
+        assert len(errors) >= 1
+        assert any("Circular" in e for e in errors)
+
+    def test_validate_no_false_positives(
+        self, resolver: FixtureResolver, registry: FixtureRegistry
+    ) -> None:
+        """Complex valid graph should pass validation."""
+        # Diamond pattern - valid
+        registry.register(FixtureDefinition(name="d"))
+        registry.register(FixtureDefinition(name="b", dependencies=["d"]))
+        registry.register(FixtureDefinition(name="c", dependencies=["d"]))
+        registry.register(FixtureDefinition(name="a", dependencies=["b", "c"]))
+
+        errors = resolver.validate_dependencies(registry)
+        assert errors == []
