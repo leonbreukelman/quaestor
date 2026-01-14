@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Quaestor specific
+quaestor-reports/
+.quaestor/
+*.quaestor.json
+
+# Smactorio
+.smactorio/

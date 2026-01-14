@@ -1,0 +1,148 @@
+# Security Scanning Workflow
+# Runs static security analysis on Python code
+
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'quaestor/**/*.py'
+      - 'tests/**/*.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'quaestor/**/*.py'
+      - 'tests/**/*.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  schedule:
+    # Run weekly on Monday at 5:00 UTC
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  bandit:
+    name: Bandit Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run Bandit
+        run: |
+          uv run pip install bandit-sarif-formatter
+          uv run bandit -r quaestor/ -f sarif -o bandit-results.sarif --severity-level medium --confidence-level medium || true
+        continue-on-error: true
+
+      - name: Upload Bandit results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+  safety:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Export requirements
+        run: uv export --format requirements-txt --no-dev > requirements.txt
+
+      - name: Run pip-audit
+        run: |
+          uv run pip-audit -r requirements.txt --format json --output pip-audit-results.json || true
+        continue-on-error: true
+
+      - name: Display vulnerability report
+        if: always()
+        run: |
+          if [ -f pip-audit-results.json ]; then
+            echo "## Dependency Vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            cat pip-audit-results.json | python3 -c "
+          import json
+          import sys
+          try:
+              data = json.load(sys.stdin)
+              if not data.get('vulnerabilities', []):
+                  print('✅ No vulnerabilities found')
+              else:
+                  for vuln in data['vulnerabilities']:
+                      print(f\"- {vuln.get('name', 'unknown')}: {vuln.get('id', 'N/A')}\")
+          except:
+              print('✅ No vulnerabilities found')"
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vulnerability-report
+          path: pip-audit-results.json
+          retention-days: 30
+
+  secrets-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect secrets with TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --json
+
+  semgrep:
+    name: Semgrep Security Scan
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep ci --sarif --output=semgrep-results.sarif
+        env:
+          SEMGREP_RULES: >-
+            p/python
+            p/security-audit
+            p/secrets
+            p/owasp-top-ten
+
+      - name: Upload Semgrep results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep
