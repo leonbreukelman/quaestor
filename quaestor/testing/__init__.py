@@ -5,7 +5,10 @@ Test generation and execution for AI agents.
 """
 
 from quaestor.testing.fixtures import (
+    DuplicateFixtureError,
     FixtureDefinition,
+    FixtureNotFoundError,
+    FixtureRegistry,
     FixtureScope,
     FixtureValue,
 )
@@ -42,7 +45,10 @@ __all__ = [
     "TestResult",
     "TestSuite",
     # Fixture models
+    "DuplicateFixtureError",
     "FixtureDefinition",
+    "FixtureNotFoundError",
+    "FixtureRegistry",
     "FixtureScope",
     "FixtureValue",
 ]
