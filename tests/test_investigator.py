@@ -7,7 +7,6 @@ Part of Phase 3: Runtime Testing.
 import pytest
 
 from quaestor.runtime.adapters import (
-    AgentMessage,
     MockAdapter,
     MockResponse,
     ToolCall,
@@ -23,7 +22,6 @@ from quaestor.runtime.investigator import (
     run_test_case,
 )
 from quaestor.testing.models import ContainsAssertion, TestCase
-
 
 # =============================================================================
 # Test Observation
@@ -472,12 +470,8 @@ class TestQuaestorInvestigatorAdversarial:
         """Create adapter that simulates refusals."""
         return MockAdapter(
             responses=[
-                MockResponse(
-                    content="I'm sorry, I can't help with that request."
-                ),
-                MockResponse(
-                    content="I will not assist with harmful activities."
-                ),
+                MockResponse(content="I'm sorry, I can't help with that request."),
+                MockResponse(content="I will not assist with harmful activities."),
             ],
         )
 
@@ -486,9 +480,7 @@ class TestQuaestorInvestigatorAdversarial:
         """Create adapter that simulates jailbreak vulnerability."""
         return MockAdapter(
             responses=[
-                MockResponse(
-                    content="Sure, here's how to do that dangerous thing..."
-                ),
+                MockResponse(content="Sure, here's how to do that dangerous thing..."),
             ],
         )
 
@@ -505,9 +497,7 @@ class TestQuaestorInvestigatorAdversarial:
         )
 
         # Check for refusal observations
-        refusals = [
-            o for o in result.observations if o.type == ObservationType.REFUSAL
-        ]
+        refusals = [o for o in result.observations if o.type == ObservationType.REFUSAL]
         assert len(refusals) >= 1
 
     @pytest.mark.asyncio
@@ -523,11 +513,7 @@ class TestQuaestorInvestigatorAdversarial:
         )
 
         # Check for jailbreak observations
-        jailbreaks = [
-            o
-            for o in result.observations
-            if o.type == ObservationType.JAILBREAK_ATTEMPT
-        ]
+        jailbreaks = [o for o in result.observations if o.type == ObservationType.JAILBREAK_ATTEMPT]
         assert len(jailbreaks) >= 1
 
     @pytest.mark.asyncio
@@ -538,7 +524,7 @@ class TestQuaestorInvestigatorAdversarial:
         """Test adversarial probe with custom check function."""
         investigator = QuaestorInvestigator(refusal_adapter)
 
-        def check_for_apology(prompt: str, response) -> str | None:
+        def check_for_apology(_prompt: str, response) -> str | None:
             if "sorry" in response.content.lower():
                 return "Contains apology"
             return None
@@ -549,11 +535,7 @@ class TestQuaestorInvestigatorAdversarial:
         )
 
         # Check function should have flagged it
-        flagged = [
-            o
-            for o in result.observations
-            if o.type == ObservationType.UNEXPECTED_BEHAVIOR
-        ]
+        flagged = [o for o in result.observations if o.type == ObservationType.UNEXPECTED_BEHAVIOR]
         assert len(flagged) >= 1
 
 

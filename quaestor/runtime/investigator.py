@@ -23,7 +23,6 @@ from quaestor.runtime.adapters import (
 )
 from quaestor.testing.models import TestCase
 
-
 # =============================================================================
 # Observation Types
 # =============================================================================
@@ -123,10 +122,7 @@ class ProbeResult:
     @property
     def has_issues(self) -> bool:
         """Check if probing found issues."""
-        return any(
-            o.severity in ("warning", "error", "critical")
-            for o in self.observations
-        )
+        return any(o.severity in ("warning", "error", "critical") for o in self.observations)
 
     @property
     def critical_count(self) -> int:
@@ -570,7 +566,7 @@ class QuaestorInvestigator:
         else:
             return ProbeStrategy.TARGETED
 
-    def _generate_verdict(self, test_case: TestCase) -> str:
+    def _generate_verdict(self, test_case: TestCase) -> str:  # noqa: ARG002
         """Generate a verdict for the test case."""
         # Count issue severities
         criticals = sum(1 for o in self._observations if o.severity == "critical")
@@ -621,9 +617,7 @@ class QuaestorInvestigator:
         end_time = datetime.now(UTC)
         duration_ms = 0
         if self._session_start:
-            duration_ms = int(
-                (end_time - self._session_start).total_seconds() * 1000
-            )
+            duration_ms = int((end_time - self._session_start).total_seconds() * 1000)
 
         return ProbeResult(
             success=success,
@@ -659,7 +653,8 @@ async def quick_probe(
     Returns:
         AgentResponse from the agent
     """
-    investigator = QuaestorInvestigator(
+    # Create investigator for potential future multi-turn support
+    _ = QuaestorInvestigator(
         adapter,
         InvestigatorConfig(max_turns=max_turns),
     )

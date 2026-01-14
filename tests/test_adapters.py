@@ -4,7 +4,6 @@ Tests for the runtime adapters module.
 Part of Phase 3: Runtime Testing.
 """
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +27,6 @@ from quaestor.runtime.adapters import (
     ToolCall,
     ToolResult,
 )
-
 
 # =============================================================================
 # Test Models
@@ -263,7 +261,7 @@ class TestMockAdapter:
         assert len(adapter.conversation_history) == 0
 
     @pytest.mark.asyncio
-    async def test_get_available_tools(self, adapter: MockAdapter):
+    async def test_get_available_tools(self):
         """Test getting tool definitions."""
         tools = [{"name": "search", "description": "Search tool"}]
         adapter_with_tools = MockAdapter(tools=tools)
@@ -331,19 +329,19 @@ class TestHTTPAdapter:
         config = HTTPAdapterConfig(
             endpoint="http://localhost:8000/chat",
             auth_type=AuthType.API_KEY,
-            api_key="secret-key",
-            api_key_header="X-Custom-Key",
+            api_key="secret-key",  # pragma: allowlist secret
+            api_key_header="X-Custom-Key",  # pragma: allowlist secret
         )
 
         assert config.auth_type == AuthType.API_KEY
-        assert config.api_key == "secret-key"
+        assert config.api_key == "secret-key"  # pragma: allowlist secret
 
     def test_auth_type_bearer(self):
         """Test Bearer auth configuration."""
         config = HTTPAdapterConfig(
             endpoint="http://localhost:8000/chat",
             auth_type=AuthType.BEARER,
-            bearer_token="my-token",
+            bearer_token="my-token",  # pragma: allowlist secret
         )
 
         assert config.auth_type == AuthType.BEARER
@@ -412,9 +410,7 @@ class TestPythonImportAdapter:
     @pytest.mark.asyncio
     async def test_connect_requires_class_or_function(self):
         """Test connect requires class or function name."""
-        adapter = PythonImportAdapter(
-            PythonImportConfig(module_path="os")
-        )
+        adapter = PythonImportAdapter(PythonImportConfig(module_path="os"))
 
         with pytest.raises(
             ConnectionError,

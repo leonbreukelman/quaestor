@@ -19,7 +19,6 @@ from uuid import uuid4
 
 import httpx
 
-
 # =============================================================================
 # Core Models
 # =============================================================================
@@ -218,7 +217,7 @@ class BaseAdapter(ABC):
         """Send a message to the agent and get response."""
         ...
 
-    async def send_tool_result(self, result: ToolResult) -> AgentResponse | None:
+    async def send_tool_result(self, result: ToolResult) -> AgentResponse | None:  # noqa: ARG002
         """Send a tool result back to the agent."""
         # Default implementation - subclasses can override
         return None
@@ -327,7 +326,7 @@ class AuthType(str, Enum):
     """Authentication types for HTTP adapter."""
 
     NONE = "none"
-    API_KEY = "api_key"
+    API_KEY = "api_key"  # pragma: allowlist secret
     BEARER = "bearer"
     BASIC = "basic"
     CUSTOM_HEADER = "custom_header"
@@ -339,11 +338,11 @@ class HTTPAdapterConfig(AdapterConfig):
 
     endpoint: str = ""
     auth_type: AuthType = AuthType.NONE
-    api_key: str | None = None
+    api_key: str | None = None  # pragma: allowlist secret
     api_key_header: str = "X-API-Key"
-    bearer_token: str | None = None
+    bearer_token: str | None = None  # pragma: allowlist secret
     basic_username: str | None = None
-    basic_password: str | None = None
+    basic_password: str | None = None  # pragma: allowlist secret
     custom_headers: dict[str, str] = field(default_factory=dict)
 
     # Request format
@@ -381,12 +380,10 @@ class HTTPAdapter(BaseAdapter):
             headers["Content-Type"] = "application/json"
 
             # Add authentication
-            if self.http_config.auth_type == AuthType.API_KEY:
-                if self.http_config.api_key:
-                    headers[self.http_config.api_key_header] = self.http_config.api_key
-            elif self.http_config.auth_type == AuthType.BEARER:
-                if self.http_config.bearer_token:
-                    headers["Authorization"] = f"Bearer {self.http_config.bearer_token}"
+            if self.http_config.auth_type == AuthType.API_KEY and self.http_config.api_key:
+                headers[self.http_config.api_key_header] = self.http_config.api_key
+            elif self.http_config.auth_type == AuthType.BEARER and self.http_config.bearer_token:
+                headers["Authorization"] = f"Bearer {self.http_config.bearer_token}"
 
             # Create client
             self._client = httpx.AsyncClient(
@@ -557,7 +554,7 @@ class PythonImportAdapter(BaseAdapter):
                 cls = getattr(module, self.import_config.class_name)
                 self._agent = cls(**self.import_config.init_kwargs)
                 # Determine invoke method
-                if hasattr(self._agent, "__call__"):
+                if callable(self._agent):
                     self._invoke_method = "__call__"
                 elif hasattr(self._agent, "invoke"):
                     self._invoke_method = "invoke"
@@ -822,9 +819,7 @@ class MCPAdapter(BaseAdapter):
         response_data = await self._send_mcp_request(
             "completion/complete",
             {
-                "messages": [
-                    {"role": message.role, "content": message.content}
-                ],
+                "messages": [{"role": message.role, "content": message.content}],
             },
         )
 
