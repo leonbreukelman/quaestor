@@ -172,7 +172,7 @@ class PythonParser:
         result = parser.parse_string(source_code, "agent.py")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the parser with tree-sitter Python language."""
         self._parser = Parser(PY_LANGUAGE)
 
