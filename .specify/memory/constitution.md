@@ -146,6 +146,9 @@ Non-trivial generated artifacts SHOULD include:
 - References to related specifications or decisions
 
 
+### IV. GitHub-Native Project Management
+Project roadmaps, feature requests, and task tracking MUST be managed via GitHub Issues and Milestones, not static markdown files. This enables: traceability (issues link to PRs and commits), assignability and accountability, project board visualization, milestone-based planning, label-based filtering, cross-referencing between issues and code, single source of truth (no stale files), collaboration with external contributors, and CI/CD integration. Static markdown files (like TODO.md) SHOULD be converted to HISTORY.md or CHANGELOG.md for archival purposes.
+
 ## AI Governance
 
 ### ai-001. Self-Reflection at Checkpoints
@@ -211,4 +214,4 @@ Systems SHOULD expose:
 
 ---
 
-**Version**: 1.0.1 | **Last Modified**: 2026-01-14
+**Version**: 1.1.0 | **Last Modified**: 2026-01-14
