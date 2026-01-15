@@ -21,6 +21,7 @@ from quaestor.evaluation.metrics import (
     ResponseLengthMetric,
     ResponseTimeMetric,
     ToolUseMetric,
+    create_deepeval_registry,
     create_default_registry,
 )
 from quaestor.evaluation.models import EvaluationCategory, EvaluationContext
@@ -414,3 +415,214 @@ class TestCreateDefaultRegistry:
         # Metrics should use the threshold
         metric = registry.get("response_length")
         assert metric is not None
+
+
+class TestDeepEvalConfig:
+    """Test DeepEvalConfig dataclass."""
+
+    def test_defaults(self):
+        """Test default DeepEval configuration."""
+        config = DeepEvalConfig()
+        assert config.model == "gpt-4o-mini"
+        assert config.threshold == 0.5
+        assert config.include_reason is True
+        assert config.use_mock is False
+
+    def test_custom_values(self):
+        """Test custom DeepEval configuration."""
+        config = DeepEvalConfig(model="gpt-4", threshold=0.8, use_mock=True)
+        assert config.model == "gpt-4"
+        assert config.threshold == 0.8
+        assert config.use_mock is True
+
+
+class TestDeepEvalMetricCategories:
+    """Test DeepEval metric category mapping."""
+
+    def test_faithfulness_category(self):
+        """Test faithfulness maps to correctness."""
+        metric = DeepEvalMetric("faithfulness", DeepEvalConfig(use_mock=True))
+        assert metric.category == EvaluationCategory.CORRECTNESS
+
+    def test_answer_relevancy_category(self):
+        """Test answer relevancy maps to helpfulness."""
+        metric = DeepEvalMetric("answer_relevancy", DeepEvalConfig(use_mock=True))
+        assert metric.category == EvaluationCategory.HELPFULNESS
+
+    def test_hallucination_category(self):
+        """Test hallucination maps to correctness."""
+        metric = DeepEvalMetric("hallucination", DeepEvalConfig(use_mock=True))
+        assert metric.category == EvaluationCategory.CORRECTNESS
+
+    def test_toxicity_category(self):
+        """Test toxicity maps to safety."""
+        metric = DeepEvalMetric("toxicity", DeepEvalConfig(use_mock=True))
+        assert metric.category == EvaluationCategory.SAFETY
+
+    def test_bias_category(self):
+        """Test bias maps to ethics."""
+        metric = DeepEvalMetric("bias", DeepEvalConfig(use_mock=True))
+        assert metric.category == EvaluationCategory.ETHICS
+
+    def test_unknown_metric_defaults_to_correctness(self):
+        """Test unknown metric types default to correctness."""
+        metric = DeepEvalMetric("unknown_metric", DeepEvalConfig(use_mock=True))
+        assert metric.category == EvaluationCategory.CORRECTNESS
+
+
+class TestDeepEvalMetricNames:
+    """Test DeepEval metric naming."""
+
+    def test_metric_name_format(self):
+        """Test metrics get deepeval_ prefix."""
+        metric = DeepEvalMetric("faithfulness", DeepEvalConfig(use_mock=True))
+        assert metric.name == "deepeval_faithfulness"
+
+    def test_different_metric_names(self):
+        """Test different metric types have correct names."""
+        metrics = [
+            ("faithfulness", "deepeval_faithfulness"),
+            ("answer_relevancy", "deepeval_answer_relevancy"),
+            ("hallucination", "deepeval_hallucination"),
+            ("toxicity", "deepeval_toxicity"),
+            ("bias", "deepeval_bias"),
+        ]
+        for metric_type, expected_name in metrics:
+            metric = DeepEvalMetric(metric_type, DeepEvalConfig(use_mock=True))
+            assert metric.name == expected_name
+
+
+class TestDeepEvalMetricMockEvaluation:
+    """Test DeepEval metrics in mock mode."""
+
+    def test_mock_evaluation_returns_consistent_score(self):
+        """Test mock mode returns 0.85 score."""
+        metric = DeepEvalMetric("faithfulness", DeepEvalConfig(use_mock=True))
+        context = EvaluationContext(input_messages=["Test"], actual_output="Response")
+        result = metric.evaluate(context)
+
+        assert result.score == 0.85
+        assert result.details["mock"] is True
+
+    def test_mock_evaluation_includes_metric_name(self):
+        """Test mock evaluation includes metric type in reason."""
+        metric = DeepEvalMetric("answer_relevancy", DeepEvalConfig(use_mock=True))
+        context = EvaluationContext(input_messages=["Test"], actual_output="Response")
+        result = metric.evaluate(context)
+
+        assert "answer_relevancy" in result.reason.lower()
+
+    def test_mock_evaluation_with_threshold(self):
+        """Test mock evaluation respects threshold."""
+        config = DeepEvalConfig(use_mock=True, threshold=0.9)
+        metric = DeepEvalMetric("faithfulness", config)
+        context = EvaluationContext(input_messages=["Test"], actual_output="Response")
+        result = metric.evaluate(context)
+
+        # Mock score is 0.85, threshold is 0.9
+        assert result.score == 0.85
+        assert result.passed is False  # 0.85 < 0.9
+
+
+class TestDeepEvalMetricImportError:
+    """Test DeepEval metric error handling."""
+
+    def test_import_error_handling(self, monkeypatch):
+        """Test graceful handling when deepeval is not installed."""
+        real_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if str(name).startswith("deepeval"):
+                raise ImportError("deepeval not found")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+        metric = DeepEvalMetric("faithfulness", DeepEvalConfig(use_mock=False))
+        context = EvaluationContext(input_messages=["Test"], actual_output="Response")
+        result = metric.evaluate(context)
+
+        assert result.score == 0.0
+        assert "not installed" in result.reason.lower()
+        assert result.details["error"] == "import_error"
+
+    def test_unknown_metric_type_error(self, monkeypatch):
+        """Test error handling for unknown metric types."""
+        # Only test in non-mock mode error path
+        real_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            # Allow deepeval import to test the ValueError path
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+        metric = DeepEvalMetric("invalid_metric", DeepEvalConfig(use_mock=False))
+
+        # Accessing the metric should raise ValueError for unknown types
+        with pytest.raises(ValueError, match="Unknown DeepEval metric"):
+            metric._get_deepeval_metric()
+
+
+class TestCreateDeepEvalRegistry:
+    """Test create_deepeval_registry factory."""
+
+    def test_creates_registry_with_deepeval_metrics(self):
+        """Test registry includes DeepEval metrics."""
+        registry = create_deepeval_registry()
+        metrics = list(registry.metrics.keys())
+
+        # Should have default metrics plus DeepEval metrics
+        assert "deepeval_faithfulness" in metrics
+        assert "deepeval_answer_relevancy" in metrics
+        assert "deepeval_hallucination" in metrics
+        assert "deepeval_toxicity" in metrics
+        assert "deepeval_bias" in metrics
+
+    def test_includes_default_metrics(self):
+        """Test registry includes default metrics too."""
+        registry = create_deepeval_registry()
+        metrics = list(registry.metrics.keys())
+
+        # Should still have default metrics
+        assert "exact_match" in metrics
+        assert "response_length" in metrics
+
+    def test_uses_deepeval_config(self):
+        """Test that DeepEval config is applied."""
+        de_config = DeepEvalConfig(threshold=0.9, model="gpt-4", use_mock=True)
+        registry = create_deepeval_registry(deepeval_config=de_config)
+
+        metric = registry.get("deepeval_faithfulness")
+        assert metric is not None
+        assert metric.deepeval_config.threshold == 0.9
+        assert metric.deepeval_config.model == "gpt-4"
+        assert metric.deepeval_config.use_mock is True
+
+    def test_uses_base_metric_config(self):
+        """Test that base metric config is also applied."""
+        config = MetricConfig(threshold=0.8)
+        de_config = DeepEvalConfig(use_mock=True)
+        registry = create_deepeval_registry(config=config, deepeval_config=de_config)
+
+        # Check a DeepEval metric uses the config
+        metric = registry.get("deepeval_faithfulness")
+        assert metric is not None
+        assert metric.config.threshold == 0.8
+
+
+class TestDeepEvalMetricLazyLoading:
+    """Test DeepEval metric lazy loading behavior."""
+
+    def test_metric_not_loaded_until_used(self):
+        """Test that DeepEval metric is not loaded on init."""
+        metric = DeepEvalMetric("faithfulness", DeepEvalConfig(use_mock=True))
+        # In mock mode, _deepeval_metric stays None
+        assert metric._deepeval_metric is None
+
+    def test_metric_loaded_on_first_access(self):
+        """Test that metric is loaded on first _get_deepeval_metric call."""
+        metric = DeepEvalMetric("faithfulness", DeepEvalConfig(use_mock=True))
+        result = metric._get_deepeval_metric()
+        # In mock mode, should return None
+        assert result is None
