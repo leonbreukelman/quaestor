@@ -495,3 +495,109 @@ class TestVerdictSummaryGeneration:
 
         assert summary.total_verdicts == 0
         assert summary.overall_status == "pass"
+
+
+class TestBatchEvaluation:
+    """Test batch evaluation methods."""
+
+    @pytest.fixture
+    def judge(self):
+        """Create a judge with mock evaluation."""
+        return QuaestorJudge(JudgeConfig(use_mock=True))
+
+    def test_evaluate_batch_single(self, judge):
+        """Test batch evaluation with single context."""
+        contexts = [
+            EvaluationContext(
+                input_messages=["Test input"],
+                actual_output="Test output",
+            )
+        ]
+
+        results = judge.evaluate_batch(contexts)
+
+        assert len(results) == 1
+        context, verdicts = results[0]
+        assert context.actual_output == "Test output"
+        assert isinstance(verdicts, list)
+
+    def test_evaluate_batch_multiple(self, judge):
+        """Test batch evaluation with multiple contexts."""
+        contexts = [
+            EvaluationContext(
+                input_messages=["Question 1"],
+                actual_output="Answer 1",
+            ),
+            EvaluationContext(
+                input_messages=["Question 2"],
+                actual_output="Answer 2",
+            ),
+            EvaluationContext(
+                input_messages=["Question 3"],
+                actual_output="Answer 3",
+            ),
+        ]
+
+        results = judge.evaluate_batch(contexts)
+
+        assert len(results) == 3
+        for i, (ctx, verdicts) in enumerate(results, 1):
+            assert ctx.actual_output == f"Answer {i}"
+            assert isinstance(verdicts, list)
+
+    def test_evaluate_batch_empty(self, judge):
+        """Test batch evaluation with empty list."""
+        results = judge.evaluate_batch([])
+        assert results == []
+
+    def test_evaluate_batch_probes(self, judge):
+        """Test batch evaluation of probe results."""
+        from quaestor.runtime.investigator import Observation, ObservationType, ProbeResult
+
+        probes = [
+            ProbeResult(
+                success=True,
+                observations=[
+                    Observation(
+                        turn=1,
+                        type=ObservationType.RESPONSE_CONTENT,
+                        message="Probe 1 response",
+                    )
+                ],
+                conversation=[],
+                tool_calls=[],
+                total_turns=1,
+                duration_ms=100,
+            ),
+            ProbeResult(
+                success=True,
+                observations=[
+                    Observation(
+                        turn=1,
+                        type=ObservationType.TOOL_CALLED,
+                        message="Called tool",
+                    ),
+                    Observation(
+                        turn=2,
+                        type=ObservationType.RESPONSE_CONTENT,
+                        message="Probe 2 response",
+                    ),
+                ],
+                conversation=[],
+                tool_calls=[],
+                total_turns=2,
+                duration_ms=200,
+            ),
+        ]
+
+        results = judge.evaluate_batch_probes(probes)
+
+        assert len(results) == 2
+        for probe, verdicts in results:
+            assert isinstance(probe, ProbeResult)
+            assert isinstance(verdicts, list)
+
+    def test_evaluate_batch_probes_empty(self, judge):
+        """Test batch evaluation with empty probe list."""
+        results = judge.evaluate_batch_probes([])
+        assert results == []

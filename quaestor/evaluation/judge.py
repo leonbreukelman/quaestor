@@ -417,6 +417,48 @@ class QuaestorJudge:
 
         return verdicts
 
+    def evaluate_batch(
+        self,
+        contexts: list[EvaluationContext],
+    ) -> list[tuple[EvaluationContext, list[Verdict]]]:
+        """
+        Evaluate multiple contexts in batch for efficiency.
+
+        Args:
+            contexts: List of evaluation contexts
+
+        Returns:
+            List of tuples (context, verdicts) for each input
+        """
+        results: list[tuple[EvaluationContext, list[Verdict]]] = []
+
+        for context in contexts:
+            verdicts = self.evaluate(context)
+            results.append((context, verdicts))
+
+        return results
+
+    def evaluate_batch_probes(
+        self,
+        probe_results: list[ProbeResult],
+    ) -> list[tuple[ProbeResult, list[Verdict]]]:
+        """
+        Evaluate multiple probe results in batch.
+
+        Args:
+            probe_results: List of probe results from QuaestorInvestigator
+
+        Returns:
+            List of tuples (probe_result, verdicts) for each input
+        """
+        results: list[tuple[ProbeResult, list[Verdict]]] = []
+
+        for probe_result in probe_results:
+            verdicts = self.evaluate_probe(probe_result)
+            results.append((probe_result, verdicts))
+
+        return results
+
     def summarize(self, verdicts: list[Verdict]) -> VerdictSummary:
         """
         Create a summary from verdicts.
