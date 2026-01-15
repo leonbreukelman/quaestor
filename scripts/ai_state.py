@@ -147,7 +147,8 @@ class AIState:
                     num = int(work_id[1:])
                     max_id = max(max_id, num)
                 except ValueError:
-                    pass
+                    # Ignore non-numeric work IDs (e.g., legacy or malformed entries) when computing max_id
+                    continue
 
         new_id = f"w{max_id + 1:03d}"
 

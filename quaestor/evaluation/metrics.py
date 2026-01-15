@@ -21,12 +21,15 @@ from quaestor.evaluation.models import (
 # Base Metric Protocol
 # =============================================================================
 
+# Default threshold for pass/fail determination
+DEFAULT_THRESHOLD = 0.5
+
 
 @dataclass
 class MetricConfig:
     """Configuration for metrics."""
 
-    threshold: float = 0.5
+    threshold: float = DEFAULT_THRESHOLD
     include_reason: bool = True
     model: str = "gpt-4o-mini"  # For LLM-based metrics
     use_mock: bool = False  # For testing
@@ -513,7 +516,7 @@ class DeepEvalMetric(BaseMetric):
         if config is None:
             # No config provided, use deepeval_config threshold
             config = MetricConfig(threshold=self.deepeval_config.threshold)
-        elif self.deepeval_config.threshold != MetricConfig().threshold:
+        elif self.deepeval_config.threshold != DEFAULT_THRESHOLD:
             # If deepeval_config has non-default threshold, prioritize it
             config = MetricConfig(
                 threshold=self.deepeval_config.threshold,
