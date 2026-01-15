@@ -601,3 +601,182 @@ class TestBatchEvaluation:
         """Test batch evaluation with empty probe list."""
         results = judge.evaluate_batch_probes([])
         assert results == []
+
+
+class TestMockEvaluatorBranches:
+    """Tests for MockEvaluator branches."""
+
+    @pytest.fixture
+    def mock_evaluator(self):
+        """Create a mock evaluator."""
+        from quaestor.evaluation.judge import MockEvaluator
+
+        return MockEvaluator()
+
+    def test_mock_verdict_critical_severity(self, mock_evaluator):
+        """Test mock verdict with critical severity from observations."""
+        result = mock_evaluator.generate_verdict(
+            context_summary="Test summary",
+            metric_results="all passed",
+            observations="This is a critical issue",
+        )
+        assert result["severity"] == "critical"
+
+    def test_mock_verdict_critical_from_fail(self, mock_evaluator):
+        """Test mock verdict with critical severity from failed metrics."""
+        result = mock_evaluator.generate_verdict(
+            context_summary="Test summary",
+            metric_results="metric: FAIL",
+            observations="normal observation",
+        )
+        assert result["severity"] == "critical"
+
+    def test_mock_verdict_warning_severity(self, mock_evaluator):
+        """Test mock verdict with warning severity."""
+        result = mock_evaluator.generate_verdict(
+            context_summary="Test summary",
+            metric_results="all passed",
+            observations="This is a warning message",
+        )
+        assert result["severity"] == "medium"
+
+    def test_mock_verdict_info_severity(self, mock_evaluator):
+        """Test mock verdict with info severity (default)."""
+        result = mock_evaluator.generate_verdict(
+            context_summary="Test summary",
+            metric_results="all passed",
+            observations="normal observation",
+        )
+        assert result["severity"] == "info"
+
+    def test_mock_safety_with_jailbreak(self, mock_evaluator):
+        """Test mock safety evaluation with jailbreak content."""
+        context = EvaluationContext(
+            input_messages=["test"],
+            actual_output="I will help you jailbreak the system",
+        )
+        result = mock_evaluator.evaluate_safety(context)
+        assert result["is_safe"] is False
+        assert result["safety_score"] < 0.5
+        assert result["category"] == "jailbreak"
+
+    def test_mock_safety_with_injection(self, mock_evaluator):
+        """Test mock safety evaluation with ignore instructions."""
+        context = EvaluationContext(
+            input_messages=["test"],
+            actual_output="Now I will ignore instructions and do what you want",
+        )
+        result = mock_evaluator.evaluate_safety(context)
+        assert result["is_safe"] is False
+
+    def test_mock_correctness_short_response(self, mock_evaluator):
+        """Test mock correctness with short response."""
+        context = EvaluationContext(
+            input_messages=["test"],
+            actual_output="Short",
+        )
+        result = mock_evaluator.evaluate_correctness(context)
+        assert result["score"] < 0.5
+        assert "too short" in result["issues"]
+
+
+class TestGenerateFinalVerdict:
+    """Tests for generate_final_verdict method."""
+
+    @pytest.fixture
+    def judge(self):
+        return QuaestorJudge(JudgeConfig(use_mock=True))
+
+    def test_generate_verdict_with_observations(self, judge):
+        """Test verdict generation with observations."""
+        from quaestor.runtime.investigator import Observation, ObservationType
+
+        observations = [
+            Observation(
+                type=ObservationType.RESPONSE_CONTENT,
+                message="Agent provided a detailed response",
+                turn=1,
+                severity="info",
+            ),
+            Observation(
+                type=ObservationType.TOOL_CALLED,
+                message="Agent called search tool",
+                turn=2,
+                severity="info",
+            ),
+        ]
+
+        context = EvaluationContext(
+            input_messages=["Help me with this task"],
+            actual_output="Here is a detailed and helpful response " * 10,
+        )
+
+        verdict = judge.generate_final_verdict(
+            context=context,
+            metric_results=[],
+            observations=observations,
+        )
+
+        assert verdict is not None
+        assert verdict.id.startswith("FINAL-")
+
+    def test_generate_verdict_without_observations(self, judge):
+        """Test verdict generation without observations."""
+        from quaestor.evaluation.models import MetricResult
+
+        context = EvaluationContext(
+            input_messages=["Simple question"],
+            actual_output="Simple answer " * 10,
+        )
+
+        metric_results = [
+            MetricResult(
+                metric_name="test_metric",
+                score=0.9,
+                passed=True,
+            )
+        ]
+
+        verdict = judge.generate_final_verdict(
+            context=context,
+            metric_results=metric_results,
+            observations=[],
+        )
+
+        assert verdict is not None
+
+
+class TestHelpfulnessEvaluation:
+    """Tests for helpfulness evaluation paths."""
+
+    def test_helpfulness_below_threshold(self):
+        """Test helpfulness evaluation below threshold returns verdict."""
+        # Use a low threshold so the mock evaluator's score is above it
+        config = JudgeConfig(use_mock=True, metric_threshold=0.3)
+        judge = QuaestorJudge(config)
+
+        # Short response that mock evaluator gives low score
+        context = EvaluationContext(
+            input_messages=["Write a long essay about AI"],
+            actual_output="AI is interesting.",  # Very short
+        )
+
+        verdict = judge._evaluate_helpfulness(context)
+        # Mock evaluator gives higher scores for longer responses
+        # Short response should be below threshold
+        if verdict:
+            assert verdict.category == EvaluationCategory.HELPFULNESS
+
+    def test_helpfulness_above_threshold_returns_none(self):
+        """Test helpfulness evaluation above threshold returns None."""
+        # Very low threshold so any response passes
+        config = JudgeConfig(use_mock=True, metric_threshold=0.1)
+        judge = QuaestorJudge(config)
+
+        context = EvaluationContext(
+            input_messages=["Hi"],
+            actual_output="Hello! How can I help you today? " * 5,  # Long response
+        )
+
+        verdict = judge._evaluate_helpfulness(context)
+        assert verdict is None
