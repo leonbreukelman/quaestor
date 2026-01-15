@@ -420,7 +420,7 @@ class FixtureResolver:
             for dep in definition.dependencies:
                 if not registry.has(dep):
                     errors.append(
-                        f"Fixture '{fixture_name}' depends on " f"non-existent fixture '{dep}'"
+                        f"Fixture '{fixture_name}' depends on non-existent fixture '{dep}'"
                     )
 
         # Check for circular dependencies (only if no missing deps)

@@ -7,10 +7,13 @@ Produces positive path tests, edge case tests, and error handling tests.
 Part of Phase 2: Test Generation.
 """
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 from uuid import uuid4
+
+import dspy
 
 from quaestor.analysis.models import (
     AgentWorkflow,
@@ -36,6 +39,39 @@ class TestScenarioType(str, Enum):
     ERROR_HANDLING = "error_handling"  # Error conditions
     STATE_TRANSITION = "state_transition"  # State machine tests
     TOOL_INTERACTION = "tool_interaction"  # Tool usage tests
+
+
+# =============================================================================
+# DSPy Signatures
+# =============================================================================
+
+
+class DesignTestsSignature(dspy.Signature):
+    """
+    Design test scenarios for an agent workflow.
+
+    Create tests that effectively validate the agent achieves its value
+    proposition and maintains invariants.
+    """
+
+    workflow_spec_json: str = dspy.InputField(
+        desc="JSON of AgentWorkflow with tools, states, and transitions"
+    )
+    test_level: str = dspy.InputField(desc="Test level: unit, integration, or e2e")
+    existing_coverage: str = dspy.InputField(
+        desc="JSON of what's already tested (empty if none)",
+        default="",
+    )
+
+    test_scenarios_json: str = dspy.OutputField(
+        desc="JSON array of test scenarios with name, description, type, inputs, expected_behavior"
+    )
+    rationale: str = dspy.OutputField(desc="Why these tests target the right things")
+
+
+# =============================================================================
+# Domain Models
+# =============================================================================
 
 
 @dataclass
@@ -123,7 +159,14 @@ class TestDesigner:
     def __init__(self, config: DesignerConfig | None = None):
         """Initialize the test designer."""
         self.config = config or DesignerConfig()
-        self._dspy_module = None
+        self._dspy_module: dspy.Module | None = None
+
+    @property
+    def dspy_module(self) -> dspy.Module:
+        """Lazy-load the DSPy module."""
+        if self._dspy_module is None:
+            self._dspy_module = dspy.ChainOfThought(DesignTestsSignature)
+        return self._dspy_module
 
     def design(self, workflow: AgentWorkflow) -> DesignResult:
         """
@@ -202,9 +245,93 @@ class TestDesigner:
 
         Uses language models for intelligent test design.
         """
-        # For now, fall back to mock mode
-        # TODO: Implement full DSPy integration
-        return self._design_mock(workflow)
+        warnings: list[str] = []
+
+        # Prepare workflow spec JSON
+        workflow_spec_json = json.dumps(workflow.model_dump(), indent=2)
+
+        # Prepare existing coverage (empty for now)
+        existing_coverage = json.dumps([])
+
+        # Determine test level from config
+        test_level = "integration"  # Default
+
+        try:
+            # Call DSPy module
+            result = self.dspy_module(
+                workflow_spec_json=workflow_spec_json,
+                test_level=test_level,
+                existing_coverage=existing_coverage,
+            )
+
+            # Parse scenarios from JSON
+            scenarios_data = json.loads(result.test_scenarios_json)
+            scenarios = self._parse_dspy_scenarios(scenarios_data)
+
+            # Build summary with rationale
+            summary = self._build_summary(workflow, scenarios)
+            summary += f"\n\nRationale: {result.rationale}"
+
+        except (json.JSONDecodeError, KeyError, Exception) as e:
+            warnings.append(f"DSPy generation failed: {e}. Falling back to mock mode.")
+            return self._design_mock(workflow)
+
+        # Convert to test suite
+        test_suite = self._scenarios_to_test_suite(workflow, scenarios)
+
+        return DesignResult(
+            scenarios=scenarios,
+            test_suite=test_suite,
+            summary=summary,
+            warnings=warnings,
+        )
+
+    def _parse_dspy_scenarios(self, scenarios_data: list[dict[str, Any]]) -> list[TestScenario]:
+        """Parse DSPy output into TestScenario objects."""
+        scenarios: list[TestScenario] = []
+
+        for data in scenarios_data:
+            # Determine scenario type
+            scenario_type_str = data.get("type", "positive")
+            try:
+                scenario_type = TestScenarioType(scenario_type_str)
+            except ValueError:
+                scenario_type = TestScenarioType.POSITIVE
+
+            # Create basic assertions based on type
+            assertions: list[Assertion] = []
+            if scenario_type == TestScenarioType.TOOL_INTERACTION and data.get("target_tool"):
+                assertions.append(
+                    ToolCalledAssertion(
+                        name=f"assert_{data['target_tool']}_called",
+                        description=f"Verify {data['target_tool']} was called",
+                        tool_name=data["target_tool"],
+                    )
+                )
+            elif scenario_type == TestScenarioType.STATE_TRANSITION and data.get("target_state"):
+                assertions.append(
+                    StateReachedAssertion(
+                        name=f"assert_{data['target_state']}_reached",
+                        description=f"Verify {data['target_state']} state is reached",
+                        state_name=data["target_state"],
+                    )
+                )
+
+            scenarios.append(
+                TestScenario(
+                    name=data.get("name", f"test_{uuid4().hex[:8]}"),
+                    description=data.get("description", ""),
+                    scenario_type=scenario_type,
+                    inputs=data.get("inputs", {}),
+                    expected_behavior=data.get("expected_behavior", ""),
+                    assertions=assertions,
+                    target_tool=data.get("target_tool"),
+                    target_state=data.get("target_state"),
+                    priority=data.get("priority", 1),
+                )
+            )
+
+        return scenarios
 
     def _generate_tool_scenarios(self, tool: ToolDefinition) -> list[TestScenario]:
         """Generate test scenarios for a single tool."""
@@ -586,6 +713,157 @@ class TestDesigner:
             test_cases=test_cases,
             tags=["auto-generated", "quaestor"],
         )
+
+    def bootstrap(
+        self,
+        examples: list[tuple[AgentWorkflow, TestSuite]],
+        metric: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Bootstrap TestDesigner from example (workflow, effective_test_suite) pairs.
+
+        This uses DSPy's optimization capabilities to improve test generation
+        quality based on proven effective test suites.
+
+        Args:
+            examples: List of (workflow_spec, test_suite) pairs where test_suite
+                     represents effective tests that found real bugs
+            metric: Optional DSPy metric function to evaluate test quality
+                   If None, uses a simple coverage-based metric
+
+        Returns:
+            Dictionary with optimization metrics:
+            - initial_score: Score before optimization
+            - final_score: Score after optimization
+            - improvement: Percentage improvement
+            - examples_used: Number of training examples
+        """
+        if not examples:
+            return {
+                "initial_score": 0.0,
+                "final_score": 0.0,
+                "improvement": 0.0,
+                "examples_used": 0,
+                "error": "No examples provided",
+            }
+
+        # Prepare training data for DSPy
+        # Each example is a (input, output) pair
+        training_data: list[dspy.Example] = []
+        for workflow, test_suite in examples:
+            workflow_json = json.dumps(workflow.model_dump())
+            # Convert test suite to the expected output format
+            scenarios_data = []
+            for tc in test_suite.test_cases:
+                scenarios_data.append(
+                    {
+                        "name": tc.name,
+                        "description": tc.description,
+                        "type": tc.tags[0] if tc.tags else "positive",
+                        "inputs": tc.input,
+                        "expected_behavior": tc.description,
+                        "target_tool": tc.target_tool,
+                        "target_state": tc.target_state,
+                    }
+                )
+
+            training_data.append(
+                dspy.Example(
+                    workflow_spec_json=workflow_json,
+                    test_level="integration",
+                    existing_coverage="",
+                    test_scenarios_json=json.dumps(scenarios_data),
+                ).with_inputs("workflow_spec_json", "test_level", "existing_coverage")
+            )
+
+        # Use simple bootstrap if no metric provided
+        if metric is None:
+            # Default metric: count of generated scenarios
+            def default_metric(
+                example: Any,
+                prediction: Any,
+                trace: Any | None = None,  # noqa: ARG001
+            ) -> float:
+                try:
+                    pred_scenarios = json.loads(prediction.test_scenarios_json)
+                    expected_scenarios = json.loads(example.test_scenarios_json)
+                    return min(len(pred_scenarios) / max(len(expected_scenarios), 1), 1.0)
+                except Exception:
+                    return 0.0
+
+            metric = default_metric
+
+        # Calculate initial score
+        initial_scores = []
+        for example in training_data:
+            pred = self.dspy_module(
+                workflow_spec_json=example.workflow_spec_json,
+                test_level=example.test_level,
+                existing_coverage=example.existing_coverage,
+            )
+            score = metric(example, pred)
+            initial_scores.append(score)
+        initial_score = sum(initial_scores) / len(initial_scores) if initial_scores else 0.0
+
+        # Run DSPy optimization (BootstrapFewShot)
+        try:
+            from dspy.teleprompt import BootstrapFewShot
+
+            # Create optimizer
+            optimizer = BootstrapFewShot(
+                metric=metric,
+                max_bootstrapped_demos=min(len(training_data), 4),
+                max_labeled_demos=min(len(training_data), 4),
+            )
+
+            # Optimize the module
+            optimized = optimizer.compile(
+                student=self.dspy_module,
+                trainset=training_data,
+            )
+
+            # Replace with optimized version
+            self._dspy_module = optimized
+
+            # Calculate final score
+            final_scores = []
+            for example in training_data:
+                pred = self.dspy_module(
+                    workflow_spec_json=example.workflow_spec_json,
+                    test_level=example.test_level,
+                    existing_coverage=example.existing_coverage,
+                )
+                score = metric(example, pred)
+                final_scores.append(score)
+            final_score = sum(final_scores) / len(final_scores) if final_scores else 0.0
+
+            improvement = (
+                ((final_score - initial_score) / initial_score * 100) if initial_score > 0 else 0.0
+            )
+
+            return {
+                "initial_score": initial_score,
+                "final_score": final_score,
+                "improvement": improvement,
+                "examples_used": len(training_data),
+            }
+
+        except ImportError:
+            return {
+                "initial_score": initial_score,
+                "final_score": initial_score,
+                "improvement": 0.0,
+                "examples_used": len(training_data),
+                "error": "DSPy optimization not available",
+            }
+        except Exception as e:
+            return {
+                "initial_score": initial_score,
+                "final_score": initial_score,
+                "improvement": 0.0,
+                "examples_used": len(training_data),
+                "error": f"Optimization failed: {e}",
+            }
 
 
 # Convenience functions

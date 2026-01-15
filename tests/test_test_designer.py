@@ -1,5 +1,8 @@
 """Tests for the TestDesigner module."""
 
+import json
+from types import SimpleNamespace
+
 import pytest
 
 from quaestor.analysis.models import (
@@ -11,6 +14,7 @@ from quaestor.analysis.models import (
     ToolParameter,
     Transition,
 )
+from quaestor.testing.models import StateReachedAssertion, TestSuite, ToolCalledAssertion
 from quaestor.testing.test_designer import (
     DesignerConfig,
     DesignResult,
@@ -553,3 +557,107 @@ class TestDesignerConfig:
         assert config.use_mock is True
         assert config.max_scenarios_per_tool == 10
         assert config.include_edge_cases is False
+
+
+class TestTestDesignerDSPyMode:
+    """Tests for DSPy-backed code paths without requiring an actual LLM."""
+
+    def test_design_with_dspy_parses_scenarios(self, simple_workflow: AgentWorkflow) -> None:
+        class DummyDSPyModule:
+            def __call__(self, **kwargs):  # noqa: ANN003
+                assert "workflow_spec_json" in kwargs
+                scenarios = [
+                    {
+                        "name": "tool_interaction",
+                        "description": "Tool should be called",
+                        "type": "tool_interaction",
+                        "inputs": {"query": "hello"},
+                        "expected_behavior": "Calls tool",
+                        "target_tool": "search_documents",
+                        "priority": 1,
+                    },
+                    {
+                        "name": "state_transition",
+                        "description": "State should be reached",
+                        "type": "state_transition",
+                        "inputs": {},
+                        "expected_behavior": "Reaches state",
+                        "target_state": "searching",
+                        "priority": 2,
+                    },
+                ]
+                return SimpleNamespace(
+                    test_scenarios_json=json.dumps(scenarios),
+                    rationale="Because these cover core behaviors",
+                )
+
+        designer = TestDesigner(DesignerConfig(use_mock=False))
+        designer._dspy_module = DummyDSPyModule()  # type: ignore[assignment]
+
+        result = designer.design(simple_workflow)
+        assert result.scenarios
+        assert "Rationale:" in result.summary
+
+        tool_scenario = next(
+            s for s in result.scenarios if s.scenario_type == TestScenarioType.TOOL_INTERACTION
+        )
+        assert any(isinstance(a, ToolCalledAssertion) for a in tool_scenario.assertions)
+
+        state_scenario = next(
+            s for s in result.scenarios if s.scenario_type == TestScenarioType.STATE_TRANSITION
+        )
+        assert any(isinstance(a, StateReachedAssertion) for a in state_scenario.assertions)
+
+    def test_design_with_dspy_invalid_json_falls_back(self, simple_workflow: AgentWorkflow) -> None:
+        class DummyDSPyModule:
+            def __call__(self, **_kwargs):  # noqa: ANN003
+                return SimpleNamespace(test_scenarios_json="not-json", rationale="")
+
+        designer = TestDesigner(DesignerConfig(use_mock=False))
+        designer._dspy_module = DummyDSPyModule()  # type: ignore[assignment]
+
+        result = designer.design(simple_workflow)
+        # Fallback uses heuristic mock generation.
+        assert result.scenarios
+        assert result.test_suite.test_cases
+
+    def test_bootstrap_runs_with_stub_optimizer(
+        self,
+        simple_workflow: AgentWorkflow,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import dspy.teleprompt as teleprompt
+
+        class DummyDSPyModule:
+            def __call__(self, **_kwargs):  # noqa: ANN003
+                return SimpleNamespace(test_scenarios_json=json.dumps([]))
+
+        class StubBootstrapFewShot:
+            def __init__(self, metric, max_bootstrapped_demos, max_labeled_demos):  # noqa: ANN001
+                self.metric = metric
+                self.max_bootstrapped_demos = max_bootstrapped_demos
+                self.max_labeled_demos = max_labeled_demos
+
+            def compile(self, student, trainset):  # noqa: ANN001
+                assert trainset
+                return student
+
+        monkeypatch.setattr(teleprompt, "BootstrapFewShot", StubBootstrapFewShot)
+
+        # Build a minimal "effective" suite from mock generation.
+        mock_designer = TestDesigner(DesignerConfig(use_mock=True))
+        mock_result = mock_designer.design(simple_workflow)
+        assert isinstance(mock_result.test_suite, TestSuite)
+
+        designer = TestDesigner(DesignerConfig(use_mock=False))
+        designer._dspy_module = DummyDSPyModule()  # type: ignore[assignment]
+
+        def always_one_metric(example, prediction, trace=None) -> float:  # noqa: ARG001
+            return 1.0
+
+        metrics = designer.bootstrap(
+            [(simple_workflow, mock_result.test_suite)],
+            metric=always_one_metric,
+        )
+
+        assert metrics["examples_used"] == 1

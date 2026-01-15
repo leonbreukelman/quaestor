@@ -308,3 +308,65 @@ class Second:
         assert first.location is not None
         assert second.location is not None
         assert second.location.start_line > first.location.start_line
+
+
+class TestParsedCodeHelpers:
+    """Tests for ParsedCode helper methods."""
+
+    def test_lookup_helpers(self) -> None:
+        source = """
+@tool
+def foo():
+    return 1
+
+@other
+def bar():
+    return 2
+
+@decorator
+class MyClass:
+    pass
+"""
+        result = parse_python_string(source)
+
+        assert result.get_function_by_name("foo") is not None
+        assert result.get_function_by_name("missing") is None
+
+        assert result.get_class_by_name("MyClass") is not None
+        assert result.get_class_by_name("Missing") is None
+
+        decorated_funcs = result.get_decorated_functions("tool")
+        assert [f.name for f in decorated_funcs] == ["foo"]
+
+        decorated_classes = result.get_decorated_classes("decorator")
+        assert [c.name for c in decorated_classes] == ["MyClass"]
+
+    def test_has_errors_aliases(self) -> None:
+        source = """
+def broken(
+    # Missing closing paren and colon
+"""
+        result = parse_python_string(source)
+
+        assert result.has_syntax_errors is True
+        assert result.has_errors is True
+
+    def test_parse_file_roundtrip(self, tmp_path) -> None:
+        parser = PythonParser()
+
+        file_path = tmp_path / "example.py"
+        file_path.write_text(
+            '"""Module doc."""\n\n@tool\ndef run():\n    return 1\n', encoding="utf-8"
+        )
+
+        result = parser.parse_file(file_path)
+        assert result.source_file.endswith("example.py")
+        assert result.module_docstring == "Module doc."
+        assert result.get_function_by_name("run") is not None
+
+    def test_parse_file_missing_raises(self, tmp_path) -> None:
+        parser = PythonParser()
+
+        missing = tmp_path / "missing.py"
+        with pytest.raises(FileNotFoundError):
+            parser.parse_file(missing)

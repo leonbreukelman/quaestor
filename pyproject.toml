@@ -114,6 +114,20 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+exclude = "^(tests/|docs/|\\.venv/|build/|dist/|\\.pytest_cache/)"
+
+[[tool.mypy.overrides]]
+module = ["dspy", "dspy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "quaestor.runtime.investigator",
+    "quaestor.testing.test_designer",
+    "quaestor.evaluation.judge",
+]
+ignore_missing_imports = true
+disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

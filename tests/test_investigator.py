@@ -4,6 +4,8 @@ Tests for the QuaestorInvestigator module.
 Part of Phase 3: Runtime Testing.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from quaestor.runtime.adapters import (
@@ -617,3 +619,59 @@ class TestConvenienceFunctions:
         result = await run_test_case(mock_adapter, test_case, config)
 
         assert result.success is True
+
+
+class TestAdaptiveProbeDSPy:
+    """Coverage tests for DSPy adaptive probing (no real LLM required)."""
+
+    @pytest.mark.asyncio
+    async def test_adaptive_probe_uses_stub_dspy_module(self) -> None:
+        adapter = MockAdapter(
+            responses=[
+                MockResponse(content="Capabilities response"),
+                MockResponse(content="Goodbye response"),
+            ]
+        )
+
+        investigator = QuaestorInvestigator(
+            adapter,
+            config=InvestigatorConfig(max_turns=3),
+            use_dspy=True,
+        )
+
+        class DummyProbeModule:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __call__(self, **kwargs):  # noqa: ANN003
+                self.calls += 1
+                assert "conversation_history" in kwargs
+                return SimpleNamespace(
+                    next_probe="Thank you, goodbye",
+                    probe_type="edge_case",
+                    reasoning="Terminate quickly",
+                )
+
+        dummy = DummyProbeModule()
+        investigator._dspy_module = dummy  # type: ignore[assignment]
+
+        result = await investigator.adaptive_probe(max_turns=3)
+
+        assert result.success is True
+        assert result.total_turns == 2
+        assert dummy.calls == 1
+
+    def test_generate_next_probe_dspy_failure_records_warning(self) -> None:
+        adapter = MockAdapter(responses=[MockResponse(content="OK")])
+        investigator = QuaestorInvestigator(adapter, use_dspy=True)
+
+        class FailingModule:
+            def __call__(self, **_kwargs):  # noqa: ANN003
+                raise RuntimeError("boom")
+
+        investigator._dspy_module = FailingModule()  # type: ignore[assignment]
+
+        out = investigator._generate_next_probe_dspy([], test_objective="x")
+        assert out is None
+        assert investigator.observations
+        assert investigator.observations[-1].severity == "warning"

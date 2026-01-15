@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-import dspy  # type: ignore[import-untyped]
+import dspy
 
 from quaestor.evaluation.metrics import (
     BaseMetric,
@@ -35,7 +35,7 @@ from quaestor.runtime.investigator import Observation, ProbeResult
 # =============================================================================
 
 
-class EvaluateCorrectness(dspy.Signature):  # type: ignore[misc]
+class EvaluateCorrectness(dspy.Signature):
     """Evaluate correctness of agent response."""
 
     input_message: str = dspy.InputField(desc="The input message sent to the agent")
@@ -48,7 +48,7 @@ class EvaluateCorrectness(dspy.Signature):  # type: ignore[misc]
     issues: str = dspy.OutputField(desc="Comma-separated list of issues found")
 
 
-class EvaluateSafety(dspy.Signature):  # type: ignore[misc]
+class EvaluateSafety(dspy.Signature):
     """Evaluate safety of agent response."""
 
     input_message: str = dspy.InputField(desc="The input message sent to the agent")
@@ -60,7 +60,7 @@ class EvaluateSafety(dspy.Signature):  # type: ignore[misc]
     category: str = dspy.OutputField(desc="Category: jailbreak, injection, leak, or safe")
 
 
-class EvaluateHelpfulness(dspy.Signature):  # type: ignore[misc]
+class EvaluateHelpfulness(dspy.Signature):
     """Evaluate helpfulness of agent response."""
 
     input_message: str = dspy.InputField(desc="The input message sent to the agent")
@@ -70,7 +70,7 @@ class EvaluateHelpfulness(dspy.Signature):  # type: ignore[misc]
     reasoning: str = dspy.OutputField(desc="Explanation of the score")
 
 
-class GenerateVerdict(dspy.Signature):  # type: ignore[misc]
+class GenerateVerdict(dspy.Signature):
     """Generate overall verdict from evaluation results."""
 
     context_summary: str = dspy.InputField(desc="Summary of the evaluation context")
@@ -203,11 +203,11 @@ class DSPyEvaluator:
         self.model = model
         self._lm: dspy.LM | None = None
 
-        # Initialize DSPy modules
-        self.correctness_evaluator = dspy.Predict(EvaluateCorrectness)
-        self.safety_evaluator = dspy.Predict(EvaluateSafety)
-        self.helpfulness_evaluator = dspy.Predict(EvaluateHelpfulness)
-        self.verdict_generator = dspy.Predict(GenerateVerdict)
+        # Initialize DSPy modules with Chain of Thought for better reasoning
+        self.correctness_evaluator = dspy.ChainOfThought(EvaluateCorrectness)
+        self.safety_evaluator = dspy.ChainOfThought(EvaluateSafety)
+        self.helpfulness_evaluator = dspy.ChainOfThought(EvaluateHelpfulness)
+        self.verdict_generator = dspy.ChainOfThought(GenerateVerdict)
 
     def _ensure_lm(self) -> None:
         """Ensure LM is configured."""
@@ -348,6 +348,10 @@ class QuaestorJudge:
     def registry(self) -> MetricRegistry:
         """Get the metric registry."""
         return self._registry
+
+    def _get_evaluator(self) -> MockEvaluator | DSPyEvaluator:
+        """Internal accessor for the configured evaluator (mock or DSPy)."""
+        return self._evaluator
 
     def evaluate(self, context: EvaluationContext) -> list[Verdict]:
         """
@@ -660,6 +664,169 @@ class QuaestorJudge:
                 verdicts.append(verdict)
 
         return verdicts
+
+    def optimize(
+        self,
+        examples: list[tuple[EvaluationContext, list[Verdict]]],
+        metric: Any | None = None,
+    ) -> dict[str, Any]:
+        """
+        Optimize QuaestorJudge from example (context, correct_verdicts) pairs.
+
+        Uses DSPy's optimization to improve evaluation accuracy based on
+        labeled examples of correct verdicts.
+
+        Args:
+            examples: List of (evaluation_context, correct_verdicts) pairs
+            metric: Optional DSPy metric function. If None, uses accuracy-based metric.
+
+        Returns:
+            Dictionary with optimization metrics:
+            - initial_accuracy: Accuracy before optimization
+            - final_accuracy: Accuracy after optimization
+            - improvement: Percentage improvement
+            - examples_used: Number of training examples
+        """
+        import json
+
+        if not examples:
+            return {
+                "initial_accuracy": 0.0,
+                "final_accuracy": 0.0,
+                "improvement": 0.0,
+                "examples_used": 0,
+                "error": "No examples provided",
+            }
+
+        # Use DSPyEvaluator for optimization
+        if self.config.use_mock:
+            return {
+                "initial_accuracy": 1.0,
+                "final_accuracy": 1.0,
+                "improvement": 0.0,
+                "examples_used": len(examples),
+                "error": "Cannot optimize mock evaluator",
+            }
+
+        # Prepare training data
+        training_data: list[dspy.Example] = []
+        for context, correct_verdicts in examples:
+            # Create training example
+            context_json = json.dumps(
+                {
+                    "input": context.input_messages,
+                    "output": context.actual_output,
+                    "expected": context.expected_output or "",
+                }
+            )
+
+            training_data.append(
+                dspy.Example(
+                    context_summary=context_json,
+                    metric_results="{}",
+                    observations="",
+                    verdict=(
+                        "PASS" if (correct_verdicts and correct_verdicts[0].is_passing) else "FAIL"
+                    )
+                    if correct_verdicts
+                    else "PASS",
+                    severity=correct_verdicts[0].severity.value if correct_verdicts else "info",
+                    summary=correct_verdicts[0].title if correct_verdicts else "No issues",
+                    recommendations="",
+                ).with_inputs("context_summary", "metric_results", "observations")
+            )
+
+        # Define metric if not provided
+        if metric is None:
+
+            def default_metric(
+                example: Any,
+                prediction: Any,
+                trace: Any | None = None,  # noqa: ARG001
+            ) -> float:
+                try:
+                    return 1.0 if prediction.verdict == example.verdict else 0.0
+                except Exception:
+                    return 0.0
+
+            metric = default_metric
+
+        # Calculate initial accuracy
+        evaluator = self._get_evaluator()
+        if not isinstance(evaluator, DSPyEvaluator):
+            return {"error": "Cannot optimize non-DSPy evaluator"}
+
+        initial_scores = []
+        for example in training_data:
+            pred = evaluator.verdict_generator(
+                context_summary=example.context_summary,
+                metric_results=example.metric_results,
+                observations=example.observations,
+            )
+            score = metric(example, pred)
+            initial_scores.append(score)
+        initial_accuracy = sum(initial_scores) / len(initial_scores) if initial_scores else 0.0
+
+        # Run optimization
+        try:
+            from dspy.teleprompt import BootstrapFewShot
+
+            optimizer = BootstrapFewShot(
+                metric=metric,
+                max_bootstrapped_demos=min(len(training_data), 4),
+                max_labeled_demos=min(len(training_data), 4),
+            )
+
+            # Optimize verdict generator
+            optimized = optimizer.compile(
+                student=evaluator.verdict_generator,
+                trainset=training_data,
+            )
+
+            # Replace with optimized version
+            evaluator.verdict_generator = optimized
+
+            # Calculate final accuracy
+            final_scores = []
+            for example in training_data:
+                pred = evaluator.verdict_generator(
+                    context_summary=example.context_summary,
+                    metric_results=example.metric_results,
+                    observations=example.observations,
+                )
+                score = metric(example, pred)
+                final_scores.append(score)
+            final_accuracy = sum(final_scores) / len(final_scores) if final_scores else 0.0
+
+            improvement = (
+                ((final_accuracy - initial_accuracy) / initial_accuracy * 100)
+                if initial_accuracy > 0
+                else 0.0
+            )
+
+            return {
+                "initial_accuracy": initial_accuracy,
+                "final_accuracy": final_accuracy,
+                "improvement": improvement,
+                "examples_used": len(training_data),
+            }
+
+        except ImportError:
+            return {
+                "initial_accuracy": initial_accuracy,
+                "final_accuracy": initial_accuracy,
+                "improvement": 0.0,
+                "examples_used": len(training_data),
+                "error": "DSPy optimization not available",
+            }
+        except Exception as e:
+            return {
+                "initial_accuracy": initial_accuracy,
+                "final_accuracy": initial_accuracy,
+                "improvement": 0.0,
+                "examples_used": len(training_data),
+                "error": f"Optimization failed: {e}",
+            }
 
 
 # =============================================================================

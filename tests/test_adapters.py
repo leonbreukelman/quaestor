@@ -4,6 +4,7 @@ Tests for the runtime adapters module.
 Part of Phase 3: Runtime Testing.
 """
 
+import textwrap
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -546,3 +547,132 @@ class TestBaseAdapter:
         history2 = adapter.conversation_history
 
         assert history1 is not history2
+
+
+# =============================================================================
+# Test PythonImportAdapter
+# =============================================================================
+
+
+class TestPythonImportAdapterExtra:
+    """Tests for PythonImportAdapter code paths not covered elsewhere."""
+
+    @pytest.mark.asyncio
+    async def test_imports_file_and_calls_function(self, tmp_path) -> None:
+        module_path = tmp_path / "agent_func.py"
+        module_path.write_text(
+            textwrap.dedent(
+                """
+                def agent(message: str) -> str:
+                    return f"echo: {message}"
+                """
+            )
+        )
+
+        adapter = PythonImportAdapter(
+            PythonImportConfig(
+                module_path=str(module_path),
+                function_name="agent",
+                capture_output=False,
+            )
+        )
+
+        await adapter.connect()
+        resp = await adapter.send_message(AgentMessage(content="hi"))
+        await adapter.disconnect()
+
+        assert resp.content == "echo: hi"
+
+    @pytest.mark.asyncio
+    async def test_parses_tool_calls_from_dict_result(self, tmp_path) -> None:
+        module_path = tmp_path / "agent_toolcalls.py"
+        module_path.write_text(
+            textwrap.dedent(
+                """
+                def agent(message: str):
+                    return {
+                        "content": "ok",
+                        "tool_calls": [
+                            {"name": "search", "arguments": {"query": message}},
+                        ],
+                    }
+                """
+            )
+        )
+
+        adapter = PythonImportAdapter(
+            PythonImportConfig(
+                module_path=str(module_path),
+                function_name="agent",
+                capture_output=False,
+            )
+        )
+
+        await adapter.connect()
+        resp = await adapter.send_message(AgentMessage(content="hello"))
+        await adapter.disconnect()
+
+        assert resp.content == "ok"
+        assert resp.tool_calls
+        assert resp.tool_calls[0].tool_name == "search"
+        assert resp.tool_calls[0].arguments == {"query": "hello"}
+
+    @pytest.mark.asyncio
+    async def test_captures_stdout_in_response(self, tmp_path) -> None:
+        module_path = tmp_path / "agent_stdout.py"
+        module_path.write_text(
+            textwrap.dedent(
+                """
+                def agent(message: str) -> str:
+                    print("printed:", message)
+                    return "done"
+                """
+            )
+        )
+
+        adapter = PythonImportAdapter(
+            PythonImportConfig(
+                module_path=str(module_path),
+                function_name="agent",
+                capture_output=True,
+            )
+        )
+
+        await adapter.connect()
+        resp = await adapter.send_message(AgentMessage(content="xyz"))
+        await adapter.disconnect()
+
+        assert "done" in resp.content
+        assert "[stdout]:" in resp.content
+        assert "printed: xyz" in resp.content
+
+    @pytest.mark.asyncio
+    async def test_imports_class_and_calls_callable(self, tmp_path) -> None:
+        module_path = tmp_path / "agent_class.py"
+        module_path.write_text(
+            textwrap.dedent(
+                """
+                class Agent:
+                    def __init__(self, prefix: str = ""):
+                        self.prefix = prefix
+
+                    def __call__(self, message: str) -> str:
+                        return f"{self.prefix}{message}"
+                """
+            )
+        )
+
+        adapter = PythonImportAdapter(
+            PythonImportConfig(
+                module_path=str(module_path),
+                class_name="Agent",
+                init_kwargs={"prefix": "p:"},
+                capture_output=False,
+            )
+        )
+
+        await adapter.connect()
+        resp = await adapter.send_message(AgentMessage(content="abc"))
+        await adapter.disconnect()
+
+        assert resp.content == "p:abc"

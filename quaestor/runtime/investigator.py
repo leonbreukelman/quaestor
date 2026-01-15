@@ -8,10 +8,13 @@ It adapts its probing strategy based on agent responses.
 Part of Phase 3: Runtime Testing.
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
+
+import dspy
 
 from quaestor.runtime.adapters import (
     AdapterState,
@@ -22,6 +25,36 @@ from quaestor.runtime.adapters import (
     ToolResult,
 )
 from quaestor.testing.models import TestCase
+
+# =============================================================================
+# DSPy Signatures
+# =============================================================================
+
+
+class ProbeStrategySignature(dspy.Signature):
+    """
+    Determine the next probe based on conversation history.
+
+    Analyzes previous turns to decide what to probe next,
+    adapting strategy based on agent responses and observations.
+    """
+
+    conversation_history: str = dspy.InputField(
+        desc="JSON array of previous messages and responses"
+    )
+    observations: str = dspy.InputField(desc="JSON array of observations made so far")
+    current_strategy: str = dspy.InputField(
+        desc="Current probing strategy (exploratory, targeted, adversarial, etc.)"
+    )
+    test_objective: str = dspy.InputField(
+        desc="Overall objective of the testing session",
+        default="Explore agent capabilities and identify issues",
+    )
+
+    next_probe: str = dspy.OutputField(desc="The next message/probe to send to the agent")
+    probe_type: str = dspy.OutputField(desc="Type of probe (positive, adversarial, edge_case)")
+    reasoning: str = dspy.OutputField(desc="Why this probe is chosen based on conversation so far")
+
 
 # =============================================================================
 # Observation Types
@@ -206,6 +239,7 @@ class QuaestorInvestigator:
         self,
         adapter: TargetAdapter,
         config: InvestigatorConfig | None = None,
+        use_dspy: bool = False,
     ):
         """
         Initialize the investigator.
@@ -213,9 +247,11 @@ class QuaestorInvestigator:
         Args:
             adapter: Target adapter for agent communication
             config: Investigator configuration
+            use_dspy: Whether to use DSPy for adaptive probing
         """
         self.adapter = adapter
         self.config = config or InvestigatorConfig()
+        self.use_dspy = use_dspy
 
         # Session state
         self._observations: list[Observation] = []
@@ -223,6 +259,16 @@ class QuaestorInvestigator:
         self._current_turn = 0
         self._strategy = self.config.default_strategy
         self._session_start: datetime | None = None
+
+        # DSPy module (lazy-loaded)
+        self._dspy_module: dspy.Module | None = None
+
+    @property
+    def dspy_module(self) -> dspy.Module:
+        """Lazy-load the DSPy module."""
+        if self._dspy_module is None:
+            self._dspy_module = dspy.ChainOfThought(ProbeStrategySignature)
+        return self._dspy_module
 
     @property
     def observations(self) -> list[Observation]:
@@ -416,6 +462,134 @@ class QuaestorInvestigator:
                 severity="error",
             )
             return self._create_result(success=False)
+
+    async def adaptive_probe(
+        self,
+        test_objective: str = "Explore agent capabilities and identify issues",
+        max_turns: int | None = None,
+    ) -> ProbeResult:
+        """
+        Conduct adaptive multi-turn probing using DSPy.
+
+        Uses DSPy to determine the next probe based on conversation history
+        and observations, adaptively exploring the agent's behavior.
+
+        Args:
+            test_objective: Overall objective of the testing session
+            max_turns: Maximum number of turns (uses config if None)
+
+        Returns:
+            ProbeResult with observations and conversation history
+        """
+        if not self.use_dspy:
+            return await self.explore(
+                "Tell me about your capabilities",
+                follow_ups=["What tools do you have?", "What are your limitations?"],
+            )
+
+        self._reset_session()
+        self._session_start = datetime.now(UTC)
+        self._strategy = ProbeStrategy.EXPLORATORY
+
+        conversation_history: list[dict[str, Any]] = []
+        max_turns = max_turns or self.config.max_turns
+
+        try:
+            if self.adapter.state != AdapterState.CONNECTED:
+                await self.adapter.connect()
+
+            # Initial probe
+            initial_probe = "Hello, what are your capabilities?"
+            conversation_history.append({"role": "investigator", "content": initial_probe})
+
+            response = await self._probe_turn(initial_probe)
+            conversation_history.append({"role": "agent", "content": response.content})
+
+            # Adaptive probing loop
+            for _turn in range(1, max_turns):
+                if self._current_turn >= max_turns:
+                    break
+
+                # Use DSPy to determine next probe
+                next_probe_result = self._generate_next_probe_dspy(
+                    conversation_history=conversation_history,
+                    test_objective=test_objective,
+                )
+
+                if not next_probe_result:
+                    break  # DSPy couldn't generate a probe
+
+                next_probe = next_probe_result["next_probe"]
+                probe_type = next_probe_result.get("probe_type", "exploratory")
+                reasoning = next_probe_result.get("reasoning", "")
+
+                # Record DSPy decision
+                self._observe(
+                    ObservationType.RESPONSE_CONTENT,
+                    f"DSPy probe decision: {reasoning}",
+                    data={"probe_type": probe_type, "reasoning": reasoning},
+                )
+
+                # Execute probe
+                conversation_history.append({"role": "investigator", "content": next_probe})
+                response = await self._probe_turn(next_probe)
+                conversation_history.append({"role": "agent", "content": response.content})
+
+                # Check for termination conditions
+                if "goodbye" in next_probe.lower() or "thank you" in next_probe.lower():
+                    break
+
+            return self._create_result(success=True)
+
+        except Exception as e:
+            self._observe(
+                ObservationType.ERROR_RESPONSE,
+                f"Adaptive probe failed: {e}",
+                severity="error",
+            )
+            return self._create_result(success=False, notes=f"Failed: {e}")
+
+    def _generate_next_probe_dspy(
+        self,
+        conversation_history: list[dict[str, Any]],
+        test_objective: str,
+    ) -> dict[str, Any] | None:
+        """
+        Use DSPy to generate the next probe.
+
+        Args:
+            conversation_history: List of messages so far
+            test_objective: Overall objective
+
+        Returns:
+            Dict with next_probe, probe_type, reasoning, or None if failed
+        """
+        try:
+            # Prepare inputs
+            history_json = json.dumps(conversation_history)
+            observations_json = json.dumps([o.to_dict() for o in self._observations[-5:]])  # Last 5
+
+            # Call DSPy module
+            result = self.dspy_module(
+                conversation_history=history_json,
+                observations=observations_json,
+                current_strategy=self._strategy.value,
+                test_objective=test_objective,
+            )
+
+            return {
+                "next_probe": result.next_probe,
+                "probe_type": result.probe_type,
+                "reasoning": result.reasoning,
+            }
+
+        except Exception as e:
+            self._observe(
+                ObservationType.ERROR_RESPONSE,
+                f"DSPy probe generation failed: {e}",
+                severity="warning",
+            )
+            return None
 
     async def _probe_turn(self, content: str) -> AgentResponse:
         """Execute a single probe turn."""

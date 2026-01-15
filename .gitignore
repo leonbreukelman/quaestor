@@ -211,5 +211,8 @@ quaestor-reports/
 .quaestor/
 *.quaestor.json
 
+# DeepEval local telemetry/cache
+.deepeval/
+
 # Smactorio
 .smactorio/

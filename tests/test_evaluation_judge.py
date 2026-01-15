@@ -4,9 +4,12 @@ Tests for QuaestorJudge.
 Part of Phase 4: Evaluation & Judgment.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from quaestor.evaluation.judge import (
+    DSPyEvaluator,
     JudgeConfig,
     MockEvaluator,
     QuaestorJudge,
@@ -15,6 +18,8 @@ from quaestor.evaluation.judge import (
 from quaestor.evaluation.models import (
     EvaluationCategory,
     EvaluationContext,
+    Severity,
+    Verdict,
 )
 
 
@@ -121,6 +126,52 @@ class TestQuaestorJudge:
         """Test initialization with mock evaluator."""
         judge = QuaestorJudge(JudgeConfig(use_mock=True))
         assert isinstance(judge._evaluator, MockEvaluator)
+
+    class TestQuaestorJudgeOptimize:
+        def test_optimize_runs_without_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
+            import dspy.teleprompt as teleprompt
+
+            judge = QuaestorJudge(JudgeConfig(use_mock=False))
+            evaluator = judge._get_evaluator()
+            assert isinstance(evaluator, DSPyEvaluator)
+
+            def fake_verdict_generator(**kwargs):  # noqa: ANN003
+                assert "context_summary" in kwargs
+                return SimpleNamespace(
+                    verdict="PASS", severity="info", summary="ok", recommendations=""
+                )
+
+            evaluator.verdict_generator = fake_verdict_generator  # type: ignore[assignment]
+
+            class StubBootstrapFewShot:
+                def __init__(self, metric, max_bootstrapped_demos, max_labeled_demos):  # noqa: ANN001
+                    self.metric = metric
+                    self.max_bootstrapped_demos = max_bootstrapped_demos
+                    self.max_labeled_demos = max_labeled_demos
+
+                def compile(self, student, trainset):  # noqa: ANN001
+                    assert trainset
+                    # Return an "optimized" callable.
+                    return student
+
+            monkeypatch.setattr(teleprompt, "BootstrapFewShot", StubBootstrapFewShot)
+
+            ctx = EvaluationContext(
+                input_messages=["Hello"],
+                actual_output="World",
+            )
+            correct = Verdict(
+                id="V-1",
+                title="All good",
+                description="OK",
+                severity=Severity.INFO,
+                category=EvaluationCategory.CORRECTNESS,
+            )
+
+            metrics = judge.optimize(examples=[(ctx, [correct])])
+            assert metrics["examples_used"] == 1
+            assert metrics["initial_accuracy"] == 1.0
+            assert metrics["final_accuracy"] == 1.0
 
     def test_evaluate_returns_verdicts(self, judge, context):
         """Test evaluate returns list of verdicts."""

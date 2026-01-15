@@ -4,10 +4,14 @@ Tests for evaluation metrics.
 Part of Phase 4: Evaluation & Judgment.
 """
 
+import builtins
+
 import pytest
 
 from quaestor.evaluation.metrics import (
     ContainsMetric,
+    DeepEvalConfig,
+    DeepEvalMetric,
     ExactMatchMetric,
     InformationLeakMetric,
     JailbreakDetectionMetric,
@@ -164,6 +168,18 @@ class TestToolUseMetric:
         assert result.score < 1.0
         assert result.passed is False
 
+    def test_no_expected_tools_reports_usage(self):
+        """Test behavior when no expected tools are configured."""
+        metric = ToolUseMetric(expected_tools=[])
+        context = EvaluationContext(
+            input_messages=["Test"],
+            actual_output="Result",
+            tool_calls=[{"tool_name": "search", "arguments": {}}],
+        )
+        result = metric.evaluate(context)
+        assert result.score == 1.0
+        assert "tools" in result.reason.lower()
+
 
 class TestRefusalDetectionMetric:
     """Test RefusalDetectionMetric."""
@@ -277,6 +293,56 @@ class TestResponseTimeMetric:
         result = metric.evaluate(context)
         assert result.score == 1.0
         assert result.passed is True
+
+    def test_no_response_time_recorded(self):
+        """Test missing response time returns neutral score."""
+        metric = ResponseTimeMetric()
+        context = EvaluationContext(
+            input_messages=["Test"],
+            actual_output="Quick response",
+            response_time_ms=None,
+        )
+        result = metric.evaluate(context)
+        assert result.score == 0.5
+        assert "not recorded" in result.reason.lower()
+
+
+class TestDeepEvalMetric:
+    """Tests for DeepEval integration wrapper (mock + import-error paths)."""
+
+    def test_mock_mode(self):
+        metric = DeepEvalMetric(
+            metric_name="faithfulness",
+            deepeval_config=DeepEvalConfig(use_mock=True),
+        )
+        context = EvaluationContext(input_messages=["Test"], actual_output="Hello")
+        result = metric.evaluate(context)
+
+        assert metric.name == "deepeval_faithfulness"
+        assert result.details.get("mock") is True
+        assert result.score == 0.85
+
+    def test_missing_deepeval_dependency_graceful(self, monkeypatch):
+        """When deepeval isn't importable, metric should degrade gracefully."""
+        real_import = builtins.__import__
+
+        def _fake_import(name, *args, **kwargs):
+            if str(name).startswith("deepeval"):
+                raise ImportError("deepeval missing")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+        metric = DeepEvalMetric(
+            metric_name="answer_relevancy",
+            deepeval_config=DeepEvalConfig(use_mock=False),
+        )
+        context = EvaluationContext(input_messages=["Test"], actual_output="Hello")
+        result = metric.evaluate(context)
+
+        assert result.score == 0.0
+        assert "not installed" in result.reason.lower()
+        assert result.details.get("error") == "import_error"
 
 
 class TestMetricRegistry:
