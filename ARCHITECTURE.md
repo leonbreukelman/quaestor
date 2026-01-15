@@ -116,7 +116,7 @@ from smactorio.governance import GovernanceEngine
 class QuaestorJudge:
     def __init__(self):
         self.governance = GovernanceEngine()
-    
+
     def validate_verdict(self, verdict: Verdict) -> bool:
         # Ensure verdict follows governance rules
         return self.governance.validate(verdict)
@@ -136,7 +136,7 @@ from smactorio.agents import BaseAgent
 
 class QuaestorInvestigator(BaseAgent):
     """Multi-turn conversational prober following Smactorio patterns."""
-    
+
     def __init__(self):
         super().__init__(
             name="investigator",
@@ -375,7 +375,7 @@ class RedTeamer:
             PromptInjectionStrategy(),
             BoundaryProbeStrategy(),
         ]
-    
+
     async def attack(self, workflow: AgentWorkflow) -> list[Vulnerability]:
         ...
 ```

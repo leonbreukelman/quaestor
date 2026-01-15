@@ -1,0 +1,21 @@
+{
+  "feature_description": "Create FixtureResolver class for resolving fixture dependencies. Include: 1) resolve(name: str, registry: FixtureRegistry) -> list[str] method returning topologically sorted dependency chain, 2) Detect and raise CyclicDependencyError for circular dependencies, 3) Raise FixtureNotFoundError if dependency doesn't exist in registry, 4) validate_dependencies(registry: FixtureRegistry) -> list[str] method to check all fixtures have valid dependencies. Build on existing FixtureRegistry and FixtureDefinition from quaestor/testing/fixtures.py. Do NOT implement scope management or value caching.",
+  "complexity": "simple",
+  "workflow_path": "init \u2192 analyst \u2192 spec_generator \u2192 constitution \u2192 task_decomposer \u2192 code_generator[DEGRADED] \u2192 validator[DEGRADED]",
+  "current_phase": "specification",
+  "agent_history": [
+    "analyst",
+    "spec_generator",
+    "constitution",
+    "task_decomposer",
+    "code_generator",
+    "validator"
+  ],
+  "started_at": "2026-01-14T12:40:02.123450",
+  "completed_at": "2026-01-14T12:43:15.581814",
+  "violations_count": 0,
+  "entities_count": 0,
+  "tasks_count": 0,
+  "files_generated": 0,
+  "code_generation_confidence": null
+}

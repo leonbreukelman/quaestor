@@ -2,9 +2,9 @@ catalog:
   uuid: 550e8400-e29b-41d4-a716-446655440000
   metadata:
     title: AI-First Default Constitution
-    version: 1.0.1
+    version: 1.1.0
     oscal-version: 1.1.3
-    last-modified: '2026-01-14T03:38:14.631331+00:00'
+    last-modified: '2026-01-14T17:45:41.235818+00:00'
 
   groups:
     # ========================================
@@ -309,6 +309,23 @@ catalog:
     # ========================================
     # AI-SPECIFIC GOVERNANCE PRINCIPLES
     # ========================================
+    - id: quality-004
+      title: GitHub-Native Project Management
+      props:
+      - name: label
+        value: IV.
+      - name: severity
+        value: RECOMMENDED
+      parts:
+      - name: statement
+        prose: 'Project roadmaps, feature requests, and task tracking MUST be managed
+          via GitHub Issues and Milestones, not static markdown files. This enables:
+          traceability (issues link to PRs and commits), assignability and accountability,
+          project board visualization, milestone-based planning, label-based filtering,
+          cross-referencing between issues and code, single source of truth (no stale
+          files), collaboration with external contributors, and CI/CD integration.
+          Static markdown files (like TODO.md) SHOULD be converted to HISTORY.md or
+          CHANGELOG.md for archival purposes.'
   - id: ai
     title: AI Governance
     controls:

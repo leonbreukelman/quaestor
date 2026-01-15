@@ -7,6 +7,7 @@ Detects anti-patterns, security issues, and best practice violations.
 Part of Phase 1: Core Analysis Engine.
 """
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -469,10 +470,15 @@ class StaticLinter:
             if not func.body_text:
                 continue
 
+            # Strip comments to avoid false negatives like: "# No break, no return!"
+            body_no_comments = "\n".join(
+                line.split("#", 1)[0] for line in func.body_text.splitlines()
+            )
+
             # Simple heuristic: while True without break
-            if "while True:" in func.body_text or "while True\n" in func.body_text:
-                has_break = "break" in func.body_text
-                has_return = "return" in func.body_text
+            if "while True:" in body_no_comments or "while True\n" in body_no_comments:
+                has_break = re.search(r"\bbreak\b", body_no_comments) is not None
+                has_return = re.search(r"\breturn\b", body_no_comments) is not None
 
                 if not has_break and not has_return:
                     loc = func.location

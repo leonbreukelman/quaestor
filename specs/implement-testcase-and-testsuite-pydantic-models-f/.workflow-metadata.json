@@ -1,0 +1,24 @@
+{
+  "feature_description": "Implement TestCase and TestSuite Pydantic models for Phase 2 Test Generation. Requirements: 1) Use discriminated union pattern for Assertion types (equals, contains, regex, tool_called, state_reached, schema_valid) with type-specific validation. 2) Loose coupling to analysis models - optional target_tool/target_state references. 3) Support both JSON and YAML serialization for OSCAL compatibility. Models needed: Assertion, TestCase, TestSuite, TestResult. Follow patterns from analysis/models.py. Target 100% test coverage.",
+  "complexity": "complex",
+  "workflow_path": "init \u2192 analyst \u2192 spec_generator \u2192 constitution \u2192 spec_generator \u2192 constitution \u2192 architect \u2192 task_decomposer \u2192 code_generator[DEGRADED] \u2192 validator[DEGRADED]",
+  "current_phase": "complexity_analysis",
+  "agent_history": [
+    "analyst",
+    "spec_generator",
+    "constitution",
+    "spec_generator",
+    "constitution",
+    "architect",
+    "task_decomposer",
+    "code_generator",
+    "validator"
+  ],
+  "started_at": "2026-01-14T11:58:37.946154",
+  "completed_at": "2026-01-14T12:04:46.584330",
+  "violations_count": 3,
+  "entities_count": 0,
+  "tasks_count": 0,
+  "files_generated": 0,
+  "code_generation_confidence": null
+}
