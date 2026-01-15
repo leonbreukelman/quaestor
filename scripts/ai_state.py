@@ -295,19 +295,21 @@ def main() -> None:
         work_id = sys.argv[2]
         state.mark_complete(work_id)
         print(f"Marked {work_id} as complete")
-        
+
         # Auto-check if ready to commit
         print("\n🔍 Checking if ready to commit...")
         result = state.verify_quality_gates()
-        
-        if result['can_commit']:
+
+        if result["can_commit"]:
             print("\n✅ READY TO COMMIT!")
             print("\n📝 Next steps:")
             print("   1. uv run pre-commit run --all-files")
-            print(f"   2. git add tests/ .specify/memory/state.yaml scripts/")
+            print("   2. git add tests/ .specify/memory/state.yaml scripts/")
             print(f"   3. git commit -m 'feat: Complete {work_id}'")
             print("   4. git push origin $(git branch --show-current)")
-            print("\n💡 Tip: Run 'uv run python scripts/ai_state.py commit-reminder' for full instructions")
+            print(
+                "\n💡 Tip: Run 'uv run python scripts/ai_state.py commit-reminder' for full instructions"
+            )
         else:
             print("\n⚠️  Not ready to commit yet")
             print("\nBlockers:")
@@ -335,7 +337,7 @@ def main() -> None:
         """Show detailed commit instructions."""
         result = state.verify_quality_gates()
         status = state.get_status()
-        
+
         print("=" * 70)
         print("📦 COMMIT READINESS CHECK")
         print("=" * 70)
@@ -345,35 +347,35 @@ def main() -> None:
         print(f"\n✓ Coverage: {status['coverage']:.2f}% (threshold: ≥85%)")
         print(f"✓ Tests: {status['tests']} passing")
         print(f"✓ Quality Gates: {'✅ PASS' if result['can_commit'] else '❌ FAIL'}")
-        
-        if result['can_commit']:
+
+        if result["can_commit"]:
             print("\n" + "=" * 70)
             print("✅ READY TO COMMIT - Follow these steps:")
             print("=" * 70)
-            
+
             # Get recent completed work
             completed = state.data["work_completed"]
             recent_work = completed[-3:] if len(completed) > 0 else []
-            
+
             if recent_work:
                 print("\n📋 Recent Work Completed:")
                 for work in recent_work:
                     print(f"   • {work['id']}: {work['description'][:60]}...")
-            
+
             print("\n🔧 Step 1: Run Pre-commit Hooks")
             print("   $ uv run pre-commit run --all-files")
-            
+
             print("\n📁 Step 2: Stage Your Changes")
             print("   $ git status  # Review changes")
             print("   $ git add tests/")
             print("   $ git add .specify/memory/state.yaml")
             print("   $ git add scripts/  # if modified")
-            
+
             print("\n💬 Step 3: Commit with Descriptive Message")
             latest_work = completed[-1] if completed else None
             if latest_work:
-                work_id = latest_work['id']
-                desc = latest_work['description']
+                work_id = latest_work["id"]
+                desc = latest_work["description"]
                 print(f"   $ git commit -m 'feat: {desc}")
                 print("")
                 print(f"   - Coverage: {status['coverage']:.2f}%")
@@ -382,15 +384,15 @@ def main() -> None:
                 print(f"   Closes: {work_id}'")
             else:
                 print("   $ git commit -m 'feat: <your description here>'")
-            
+
             print("\n🚀 Step 4: Push to Remote")
             print(f"   $ git push origin {status['branch']}")
-            
+
             print("\n📝 Step 5: Export Session Log")
             print("   $ uv run python scripts/ai_state.py export-session >> HISTORY.md")
-            
+
             print("\n" + "=" * 70)
-            
+
         else:
             print("\n" + "=" * 70)
             print("⚠️  NOT READY TO COMMIT")
