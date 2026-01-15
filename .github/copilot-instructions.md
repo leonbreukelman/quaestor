@@ -2,6 +2,82 @@
 
 > **Purpose**: Instructions for GitHub Copilot and AI coding assistants working in the quaestor repository.
 
+## AI Session Protocol (CRITICAL - READ FIRST)
+
+**Every AI session MUST follow this protocol:**
+
+### 1. Session Start (REQUIRED)
+```bash
+# Load current project state
+uv run python scripts/ai_state.py status
+
+# Review work queue
+uv run python scripts/ai_state.py next
+```
+
+**Action**: Read `.specify/memory/state.yaml` to understand:
+- Current phase and status
+- Work completed this session
+- Work queue and priorities
+- Quality gates and blockers
+- Technical debt
+
+### 2. Work Execution (REQUIRED)
+```bash
+# Before starting work item w004
+uv run python scripts/ai_state.py next  # Confirm it's next
+
+# After completing work item w004
+uv run python scripts/ai_state.py complete w004  # AUTO-CHECKS commit readiness
+```
+
+**Action**: Update state after each atomic change:
+- Mark work items complete with verification data
+- **Auto-reminder**: The `complete` command now automatically checks if you're ready to commit
+- If ready, it shows quick commit instructions
+- For detailed instructions, run: `uv run python scripts/ai_state.py commit-reminder`
+- Update test counts and coverage deltas
+- Record files changed
+
+**🎯 AI Agent Behavior**: After completing a work item, I will:
+1. Run `complete w004` which auto-checks commit readiness
+2. If `Can Commit: ✅`, I'll proactively remind you with quick steps
+3. Suggest running `commit-reminder` for full instructions
+
+### 3. Quality Verification (REQUIRED)
+```bash
+# Before any commit
+uv run python scripts/ai_state.py verify
+
+# Check blockers
+uv run pytest --cov
+uv run ruff check .
+uv run mypy .
+```
+
+**Action**: Verify quality gates:
+- Coverage ≥ 85%
+- All tests passing
+- No linter/type errors
+- Pre-commit hooks pass
+
+### 4. Session End (REQUIRED)
+```bash
+# Export session log
+uv run python scripts/ai_state.py export-session >> HISTORY.md
+
+# Update state file
+# (automatically done by ai_state.py)
+```
+
+**Action**: Record session summary:
+- Work completed
+- Tests passing/coverage achieved
+- Blockers remaining
+- Next actions
+
+---
+
 ## Agentic SDD Workflow (PRIMARY PATH)
 
 **When building new features, use the autonomous multi-agent workflow:**
