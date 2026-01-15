@@ -1,7 +1,7 @@
 # Smactorio Upgrade Simulation Report
 
-**Date**: 2026-01-14  
-**Current Branch**: `feature/phase-1-core-analysis-engine`  
+**Date**: 2026-01-14
+**Current Branch**: `feature/phase-1-core-analysis-engine`
 **Upgrade Target**: Latest `main` from https://github.com/leonbreukelman/smactorio
 
 ---
@@ -100,7 +100,7 @@ Smactorio is used via CLI in these contexts:
    - `smactorio constitution list`
    - `smactorio constitution check`
    - `smactorio workflow run`
-   
+
 2. **Dependency declaration** (pyproject.toml)
    - `smactorio[agentic] @ git+https://...` (main deps)
    - `smactorio @ git+https://...` (dev deps)
@@ -166,15 +166,15 @@ Status: UNRELATED to smactorio (linter test issue)
 1. **New Agents Available**
    - `ContractGeneratorAgent` - Generate API contracts automatically
    - `ChecklistGeneratorAgent` - Generate implementation checklists
-   
+
 2. **Enhanced DX Tools**
    - `skip_verification` option for faster iteration
    - Better CI compatibility
-   
+
 3. **Improved Stability**
    - Test fixtures improvements
    - Circuit breaker for interceptor
-   
+
 4. **Bug Fixes**
    - Interceptor upstream test failures resolved
    - pytest-asyncio fixture improvements

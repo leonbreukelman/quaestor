@@ -1,0 +1,17 @@
+{
+  "feature_description": "Implement QuaestorInvestigator DSPy module for multi-turn adaptive conversational probing of AI agents. Should include: 1) ProbeStrategySignature for determining next probe based on conversation history, 2) QuaestorInvestigator class using dspy.ChainOfThought, 3) Methods for adaptive probing with observation collection, 4) Integration with TargetAdapter for agent communication, 5) ProbeHistory tracking, 6) Support for different probe types (positive, adversarial, edge case), 7) Graceful degradation when adapter fails",
+  "complexity": "complex",
+  "generated_at": "2026-01-14T17:24:01.874704",
+  "entities_count": 0,
+  "tasks_count": 0,
+  "files_generated": 0,
+  "agents_completed": [],
+  "artifacts_generated": {
+    "spec_md": true,
+    "plan_md": false,
+    "tasks_md": false,
+    "research_md": false,
+    "data_model_md": false,
+    "quickstart_md": false
+  }
+}
