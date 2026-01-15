@@ -376,6 +376,393 @@ class TestHTTPAdapter:
 
         await adapter.disconnect()
 
+    @pytest.mark.asyncio
+    async def test_send_message_with_tool_calls(self, adapter: HTTPAdapter):
+        """Test send_message with tool calls in response."""
+        await adapter.connect()
+
+        # Mock response with tool calls
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "response": "I'll search for that",
+            "tool_calls": [
+                {"name": "search", "arguments": {"query": "test"}},
+                {"name": "calculator", "arguments": {"expr": "2+2"}},
+            ],
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(
+            adapter._client,
+            "post",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            response = await adapter.send_message(AgentMessage(content="Search for test"))
+
+            assert response.content == "I'll search for that"
+            assert len(response.tool_calls) == 2
+            assert response.tool_calls[0].tool_name == "search"
+            assert response.tool_calls[1].tool_name == "calculator"
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_retry_on_timeout(self, adapter: HTTPAdapter):
+        """Test that send_message retries on timeout."""
+        adapter.http_config.max_retries = 3
+        adapter.http_config.retry_delay_seconds = 0.1
+        await adapter.connect()
+
+        import httpx
+
+        # First two calls timeout, third succeeds
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "Success after retry"}
+        mock_response.raise_for_status = MagicMock()
+
+        post_mock = AsyncMock(
+            side_effect=[
+                httpx.TimeoutException("Timeout 1"),
+                httpx.TimeoutException("Timeout 2"),
+                mock_response,
+            ]
+        )
+
+        with patch.object(adapter._client, "post", post_mock):
+            response = await adapter.send_message(AgentMessage(content="Retry me"))
+
+            assert response.content == "Success after retry"
+            assert post_mock.call_count == 3
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_retry_exhausted(self, adapter: HTTPAdapter):
+        """Test that send_message fails after max retries."""
+        adapter.http_config.max_retries = 2
+        adapter.http_config.retry_delay_seconds = 0.1
+        await adapter.connect()
+
+        import httpx
+
+        # All retries fail
+        post_mock = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
+
+        with patch.object(adapter._client, "post", post_mock):
+            with pytest.raises(TimeoutError, match="Request timed out"):
+                await adapter.send_message(AgentMessage(content="Fail"))
+
+            assert post_mock.call_count == 2
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_http_error(self, adapter: HTTPAdapter):
+        """Test send_message handles HTTP errors."""
+        await adapter.connect()
+
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        error = httpx.HTTPStatusError("Server error", request=MagicMock(), response=mock_response)
+
+        post_mock = AsyncMock(side_effect=error)
+
+        with (
+            patch.object(adapter._client, "post", post_mock),
+            pytest.raises(ConnectionError, match="HTTP error 500"),
+        ):
+            await adapter.send_message(AgentMessage(content="Error"))
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_generic_exception(self, adapter: HTTPAdapter):
+        """Test send_message handles generic exceptions."""
+        await adapter.connect()
+
+        post_mock = AsyncMock(side_effect=RuntimeError("Unexpected error"))
+
+        with (
+            patch.object(adapter._client, "post", post_mock),
+            pytest.raises(RuntimeError, match="Unexpected error"),
+        ):
+            await adapter.send_message(AgentMessage(content="Error"))
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_connect_with_basic_auth(self):
+        """Test connecting with basic authentication."""
+        config = HTTPAdapterConfig(
+            endpoint="http://localhost:8000/chat",
+            auth_type=AuthType.BASIC,
+            basic_username="user",
+            basic_password="pass",  # pragma: allowlist secret
+        )
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        assert adapter.state == AdapterState.CONNECTED
+        assert adapter._client is not None
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_connect_with_custom_headers(self):
+        """Test connecting with custom headers."""
+        config = HTTPAdapterConfig(
+            endpoint="http://localhost:8000/chat",
+            custom_headers={"X-Custom": "value", "X-Another": "header"},
+        )
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        assert adapter.state == AdapterState.CONNECTED
+        assert adapter._client is not None
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_connect_failure_sets_error_state(self):
+        """Test that connect failures set error state."""
+        config = HTTPAdapterConfig(endpoint="http://localhost:8000/chat")
+        adapter = HTTPAdapter(config)
+
+        # Mock AsyncClient to raise error
+        with patch(
+            "quaestor.runtime.adapters.httpx.AsyncClient",
+            side_effect=RuntimeError("Connection failed"),
+        ):
+            with pytest.raises(ConnectionError, match="Failed to connect"):
+                await adapter.connect()
+
+            assert adapter.state == AdapterState.ERROR
+
+    @pytest.mark.asyncio
+    async def test_send_message_with_metadata(self, adapter: HTTPAdapter):
+        """Test send_message includes metadata in payload."""
+        await adapter.connect()
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "OK"}
+        mock_response.raise_for_status = MagicMock()
+
+        post_mock = AsyncMock(return_value=mock_response)
+
+        with patch.object(adapter._client, "post", post_mock):
+            message = AgentMessage(
+                content="Test",
+                metadata={"user_id": "123", "session": "abc"},
+            )
+            await adapter.send_message(message)
+
+            # Check that metadata was included in the payload
+            call_args = post_mock.call_args
+            payload = call_args.kwargs["json"]
+            assert payload["user_id"] == "123"
+            assert payload["session"] == "abc"
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_get_available_tools_returns_empty(self, adapter: HTTPAdapter):
+        """Test that HTTPAdapter returns empty tools list by default."""
+        await adapter.connect()
+
+        tools = await adapter.get_available_tools()
+
+        assert tools == []
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_conversation_history_tracking(self, adapter: HTTPAdapter):
+        """Test that conversation history is tracked."""
+        await adapter.connect()
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "Hello!"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(
+            adapter._client, "post", new_callable=AsyncMock, return_value=mock_response
+        ):
+            msg1 = AgentMessage(content="First message")
+            msg2 = AgentMessage(content="Second message")
+
+            await adapter.send_message(msg1)
+            await adapter.send_message(msg2)
+
+            history = adapter.conversation_history
+
+            assert len(history) == 4  # 2 messages + 2 responses
+            assert isinstance(history[0], AgentMessage)
+            assert isinstance(history[1], AgentResponse)
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_fallback_content_extraction(self, adapter: HTTPAdapter):
+        """Test send_message handles responses without expected field."""
+        await adapter.connect()
+
+        # Response without the configured response field
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"unexpected": "format", "data": "value"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(
+            adapter._client, "post", new_callable=AsyncMock, return_value=mock_response
+        ):
+            response = await adapter.send_message(AgentMessage(content="Hi"))
+
+            # Should fall back to str(data)
+            assert "unexpected" in response.content or "format" in response.content
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_connect_with_api_key_auth_headers(self):
+        """Test that API key auth sets proper headers."""
+        config = HTTPAdapterConfig(
+            endpoint="http://localhost:8000/chat",
+            auth_type=AuthType.API_KEY,
+            api_key="test-key-123",  # pragma: allowlist secret
+            api_key_header="X-API-Key",  # pragma: allowlist secret
+        )
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        # Check that client was created with headers
+        assert adapter._client is not None
+        assert adapter.state == AdapterState.CONNECTED
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_connect_with_bearer_auth_headers(self):
+        """Test that Bearer auth sets proper headers."""
+        config = HTTPAdapterConfig(
+            endpoint="http://localhost:8000/chat",
+            auth_type=AuthType.BEARER,
+            bearer_token="bearer-token-xyz",  # pragma: allowlist secret  # noqa: S106
+        )
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        # Check that client was created with headers
+        assert adapter._client is not None
+        assert adapter.state == AdapterState.CONNECTED
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_with_custom_fields(self):
+        """Test send_message with custom message and response fields."""
+        config = HTTPAdapterConfig(
+            endpoint="http://localhost:8000/chat",
+            message_field="input",
+            response_field="output",
+        )
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"output": "Custom field response"}
+        mock_response.raise_for_status = MagicMock()
+
+        post_mock = AsyncMock(return_value=mock_response)
+
+        with patch.object(adapter._client, "post", post_mock):
+            response = await adapter.send_message(AgentMessage(content="Test"))
+
+            # Check message was sent with custom field
+            call_args = post_mock.call_args
+            payload = call_args.kwargs["json"]
+            assert "input" in payload
+            assert payload["input"] == "Test"
+
+            # Check response was extracted from custom field
+            assert response.content == "Custom field response"
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_send_message_retries_http_errors(self):
+        """Test that send_message retries on HTTP status errors."""
+        config = HTTPAdapterConfig(
+            endpoint="http://localhost:8000/chat",
+            max_retries=3,
+            retry_delay_seconds=0.1,
+        )
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        import httpx
+
+        # First two fail with 503, third succeeds
+        mock_response_fail = MagicMock()
+        mock_response_fail.status_code = 503
+        mock_response_fail.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError(
+                "Service unavailable", request=MagicMock(), response=mock_response_fail
+            )
+        )
+
+        mock_response_success = MagicMock()
+        mock_response_success.json.return_value = {"response": "Success"}
+        mock_response_success.raise_for_status = MagicMock()
+
+        post_mock = AsyncMock(
+            side_effect=[
+                mock_response_fail,
+                mock_response_fail,
+                mock_response_success,
+            ]
+        )
+
+        with patch.object(adapter._client, "post", post_mock):
+            response = await adapter.send_message(AgentMessage(content="Retry"))
+
+            assert response.content == "Success"
+            assert post_mock.call_count == 3
+
+        await adapter.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_clear_history(self):
+        """Test clearing conversation history."""
+        config = HTTPAdapterConfig(endpoint="http://localhost:8000/chat")
+        adapter = HTTPAdapter(config)
+
+        await adapter.connect()
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "Hello"}
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(
+            adapter._client, "post", new_callable=AsyncMock, return_value=mock_response
+        ):
+            await adapter.send_message(AgentMessage(content="Hi"))
+
+            assert len(adapter.conversation_history) == 2
+
+            adapter.clear_history()
+
+            assert len(adapter.conversation_history) == 0
+
+        await adapter.disconnect()
+
 
 # =============================================================================
 # Test PythonImportAdapter
