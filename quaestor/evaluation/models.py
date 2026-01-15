@@ -296,6 +296,117 @@ class VerdictSummary(BaseModel):
         """Get list of affected categories."""
         return [EvaluationCategory(cat) for cat in self.category_counts]
 
+    def filter_by_severity(
+        self,
+        severities: list[Severity] | Severity,
+    ) -> list[Verdict]:
+        """
+        Filter verdicts by severity level(s).
+
+        Args:
+            severities: Single severity or list of severities to filter by
+
+        Returns:
+            List of verdicts matching the severity filter
+        """
+        if isinstance(severities, Severity):
+            severities = [severities]
+        return [v for v in self.verdicts if v.severity in severities]
+
+    def filter_by_category(
+        self,
+        categories: list[EvaluationCategory] | EvaluationCategory,
+    ) -> list[Verdict]:
+        """
+        Filter verdicts by category(ies).
+
+        Args:
+            categories: Single category or list of categories to filter by
+
+        Returns:
+            List of verdicts matching the category filter
+        """
+        if isinstance(categories, EvaluationCategory):
+            categories = [categories]
+        return [v for v in self.verdicts if v.category in categories]
+
+    def get_failing_verdicts(self) -> list[Verdict]:
+        """
+        Get all failing verdicts (CRITICAL or HIGH severity).
+
+        Returns:
+            List of failing verdicts
+        """
+        return [v for v in self.verdicts if v.is_failing]
+
+    def get_governance_violations(self) -> list[Verdict]:
+        """
+        Get verdicts linked to governance principles.
+
+        Returns:
+            List of verdicts with governance_principle set
+        """
+        return [v for v in self.verdicts if v.governance_principle is not None]
+
+    def query(
+        self,
+        *,
+        severity: Severity | list[Severity] | None = None,
+        category: EvaluationCategory | list[EvaluationCategory] | None = None,
+        min_score: float | None = None,
+        max_score: float | None = None,
+        test_case_id: str | None = None,
+        agent_id: str | None = None,
+        governance_principle: str | None = None,
+    ) -> list[Verdict]:
+        """
+        Query verdicts with multiple filter criteria.
+
+        Args:
+            severity: Filter by severity level(s)
+            category: Filter by category(ies)
+            min_score: Minimum score (inclusive)
+            max_score: Maximum score (inclusive)
+            test_case_id: Filter by test case ID
+            agent_id: Filter by agent ID
+            governance_principle: Filter by governance principle ID
+
+        Returns:
+            List of verdicts matching all specified criteria
+        """
+        results = self.verdicts
+
+        # Apply severity filter
+        if severity is not None:
+            sev_list = [severity] if isinstance(severity, Severity) else severity
+            results = [v for v in results if v.severity in sev_list]
+
+        # Apply category filter
+        if category is not None:
+            cat_list = [category] if isinstance(category, EvaluationCategory) else category
+            results = [v for v in results if v.category in cat_list]
+
+        # Apply score filters
+        if min_score is not None:
+            results = [v for v in results if v.score is not None and v.score >= min_score]
+
+        if max_score is not None:
+            results = [v for v in results if v.score is not None and v.score <= max_score]
+
+        # Apply test case filter
+        if test_case_id is not None:
+            results = [v for v in results if v.test_case_id == test_case_id]
+
+        # Apply agent filter
+        if agent_id is not None:
+            results = [v for v in results if v.agent_id == agent_id]
+
+        # Apply governance principle filter
+        if governance_principle is not None:
+            results = [v for v in results if v.governance_principle == governance_principle]
+
+        return results
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -399,6 +510,10 @@ class EvaluationContext(BaseModel):
     test_case_id: str | None = Field(default=None)
     agent_id: str | None = Field(default=None)
     response_time_ms: int | None = Field(default=None)
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata for evaluation context",
+    )
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -412,4 +527,5 @@ class EvaluationContext(BaseModel):
             "test_case_id": self.test_case_id,
             "agent_id": self.agent_id,
             "response_time_ms": self.response_time_ms,
+            "metadata": self.metadata,
         }

@@ -18,13 +18,13 @@ from quaestor.evaluation.models import (
 class TestSeverity:
     """Test Severity enum."""
 
-    def test_all_severities_exist(self):
+    def test_all_severities_exist(self) -> None:
         """Test that all expected severities exist."""
-        assert Severity.CRITICAL == "critical"
-        assert Severity.HIGH == "high"
-        assert Severity.MEDIUM == "medium"
-        assert Severity.LOW == "low"
-        assert Severity.INFO == "info"
+        assert Severity.CRITICAL.value == "critical"
+        assert Severity.HIGH.value == "high"
+        assert Severity.MEDIUM.value == "medium"
+        assert Severity.LOW.value == "low"
+        assert Severity.INFO.value == "info"
 
     def test_from_score_critical(self):
         """Test from_score for critical severity."""
@@ -328,10 +328,366 @@ class TestEvaluationContext:
             observations=[{"type": "tool_call", "message": "Used calculator"}],
             test_case_id="TC-001",
             agent_id="agent-1",
-            response_time_ms=150.0,
+            response_time_ms=150,
             metadata={"model": "gpt-4"},
         )
         assert len(context.input_messages) == 2
         assert context.expected_output == "4"
         assert len(context.tool_calls) == 1
         assert context.response_time_ms == 150.0
+
+
+class TestVerdictSerialization:
+    """Test Verdict serialization methods."""
+
+    def test_to_dict(self):
+        """Test converting verdict to dictionary."""
+        evidence = Evidence(
+            type="observation",
+            source="investigator",
+            content="Found issue",
+        )
+        verdict = Verdict(
+            id="V-001",
+            title="Test Verdict",
+            description="Test description",
+            severity=Severity.HIGH,
+            category=EvaluationCategory.SAFETY,
+            evidence=[evidence],
+            reasoning="Found safety concern",
+            remediation="Add input validation",
+            score=0.35,
+            test_case_id="TC-001",
+            agent_id="agent-1",
+            governance_principle="safety-001",
+        )
+        data = verdict.to_dict()
+
+        assert data["id"] == "V-001"
+        assert data["title"] == "Test Verdict"
+        assert data["severity"] == "high"
+        assert data["category"] == "safety"
+        assert len(data["evidence"]) == 1
+        assert data["evidence"][0]["type"] == "observation"
+        assert data["reasoning"] == "Found safety concern"
+        assert data["remediation"] == "Add input validation"
+        assert data["score"] == 0.35
+        assert data["governance_principle"] == "safety-001"
+
+    def test_to_yaml(self):
+        """Test converting verdict to YAML."""
+        verdict = Verdict(
+            id="V-002",
+            title="YAML Test",
+            description="Testing YAML serialization",
+            severity=Severity.MEDIUM,
+            category=EvaluationCategory.CORRECTNESS,
+        )
+        yaml_str = verdict.to_yaml()
+
+        assert "id: V-002" in yaml_str
+        assert "title: YAML Test" in yaml_str
+        assert "severity: medium" in yaml_str
+        assert "category: correctness" in yaml_str
+
+    def test_from_yaml(self):
+        """Test loading verdict from YAML."""
+        yaml_str = """
+id: V-003
+title: From YAML
+description: Loaded from YAML string
+severity: low
+category: helpfulness
+evidence: []
+reasoning: Test reasoning
+remediation: null
+score: 0.75
+test_case_id: TC-002
+agent_id: null
+governance_principle: null
+created_at: '2026-01-15T10:00:00+00:00'
+"""
+        verdict = Verdict.from_yaml(yaml_str)
+
+        assert verdict.id == "V-003"
+        assert verdict.title == "From YAML"
+        assert verdict.severity == Severity.LOW
+        assert verdict.category == EvaluationCategory.HELPFULNESS
+        assert verdict.score == 0.75
+
+    def test_yaml_roundtrip(self):
+        """Test YAML serialization roundtrip."""
+        original = Verdict(
+            id="V-ROUNDTRIP",
+            title="Roundtrip Test",
+            description="Test roundtrip serialization",
+            severity=Severity.CRITICAL,
+            category=EvaluationCategory.JAILBREAK,
+            score=0.15,
+            reasoning="Critical finding",
+        )
+        yaml_str = original.to_yaml()
+        loaded = Verdict.from_yaml(yaml_str)
+
+        assert loaded.id == original.id
+        assert loaded.title == original.title
+        assert loaded.severity == original.severity
+        assert loaded.category == original.category
+        assert loaded.score == original.score
+
+
+class TestVerdictSummaryFiltering:
+    """Test VerdictSummary filtering and querying methods."""
+
+    def _create_test_verdicts(self) -> list[Verdict]:
+        """Create a set of test verdicts for filtering."""
+        return [
+            Verdict(
+                id="V1",
+                title="Critical Safety",
+                description="Critical safety issue",
+                severity=Severity.CRITICAL,
+                category=EvaluationCategory.SAFETY,
+                score=0.1,
+                test_case_id="TC-001",
+                agent_id="agent-1",
+                governance_principle="safety-001",
+            ),
+            Verdict(
+                id="V2",
+                title="High Correctness",
+                description="Correctness problem",
+                severity=Severity.HIGH,
+                category=EvaluationCategory.CORRECTNESS,
+                score=0.3,
+                test_case_id="TC-001",
+                agent_id="agent-1",
+            ),
+            Verdict(
+                id="V3",
+                title="Medium Jailbreak",
+                description="Potential jailbreak",
+                severity=Severity.MEDIUM,
+                category=EvaluationCategory.JAILBREAK,
+                score=0.5,
+                test_case_id="TC-002",
+                agent_id="agent-2",
+                governance_principle="safety-002",
+            ),
+            Verdict(
+                id="V4",
+                title="Low Helpfulness",
+                description="Could be more helpful",
+                severity=Severity.LOW,
+                category=EvaluationCategory.HELPFULNESS,
+                score=0.7,
+                test_case_id="TC-002",
+                agent_id="agent-2",
+            ),
+            Verdict(
+                id="V5",
+                title="Info Finding",
+                description="Informational note",
+                severity=Severity.INFO,
+                category=EvaluationCategory.CORRECTNESS,
+                score=0.9,
+                test_case_id="TC-003",
+                agent_id="agent-1",
+            ),
+        ]
+
+    def test_filter_by_severity_single(self):
+        """Test filtering by single severity."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        critical = summary.filter_by_severity(Severity.CRITICAL)
+
+        assert len(critical) == 1
+        assert critical[0].id == "V1"
+
+    def test_filter_by_severity_multiple(self):
+        """Test filtering by multiple severities."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        high_severity = summary.filter_by_severity([Severity.CRITICAL, Severity.HIGH])
+
+        assert len(high_severity) == 2
+        ids = {v.id for v in high_severity}
+        assert ids == {"V1", "V2"}
+
+    def test_filter_by_category_single(self):
+        """Test filtering by single category."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        safety = summary.filter_by_category(EvaluationCategory.SAFETY)
+
+        assert len(safety) == 1
+        assert safety[0].id == "V1"
+
+    def test_filter_by_category_multiple(self):
+        """Test filtering by multiple categories."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        correctness_verdicts = summary.filter_by_category(
+            [EvaluationCategory.CORRECTNESS, EvaluationCategory.HELPFULNESS]
+        )
+
+        assert len(correctness_verdicts) == 3
+        ids = {v.id for v in correctness_verdicts}
+        assert ids == {"V2", "V4", "V5"}
+
+    def test_get_failing_verdicts(self):
+        """Test getting failing verdicts."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        failing = summary.get_failing_verdicts()
+
+        assert len(failing) == 2
+        ids = {v.id for v in failing}
+        assert ids == {"V1", "V2"}
+
+    def test_get_governance_violations(self):
+        """Test getting governance-linked verdicts."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        gov_verdicts = summary.get_governance_violations()
+
+        assert len(gov_verdicts) == 2
+        ids = {v.id for v in gov_verdicts}
+        assert ids == {"V1", "V3"}
+
+    def test_query_by_severity(self):
+        """Test query with severity filter."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(severity=Severity.MEDIUM)
+
+        assert len(results) == 1
+        assert results[0].id == "V3"
+
+    def test_query_by_category(self):
+        """Test query with category filter."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(category=EvaluationCategory.JAILBREAK)
+
+        assert len(results) == 1
+        assert results[0].id == "V3"
+
+    def test_query_by_score_range(self):
+        """Test query with score range filter."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(min_score=0.5, max_score=0.8)
+
+        assert len(results) == 2
+        ids = {v.id for v in results}
+        assert ids == {"V3", "V4"}
+
+    def test_query_by_test_case_id(self):
+        """Test query with test case ID filter."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(test_case_id="TC-001")
+
+        assert len(results) == 2
+        ids = {v.id for v in results}
+        assert ids == {"V1", "V2"}
+
+    def test_query_by_agent_id(self):
+        """Test query with agent ID filter."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(agent_id="agent-2")
+
+        assert len(results) == 2
+        ids = {v.id for v in results}
+        assert ids == {"V3", "V4"}
+
+    def test_query_by_governance_principle(self):
+        """Test query with governance principle filter."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(governance_principle="safety-001")
+
+        assert len(results) == 1
+        assert results[0].id == "V1"
+
+    def test_query_combined_filters(self):
+        """Test query with multiple filters combined."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(
+            severity=[Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM],
+            agent_id="agent-1",
+        )
+
+        # Only V1 and V2 match (critical/high and agent-1)
+        assert len(results) == 2
+        ids = {v.id for v in results}
+        assert ids == {"V1", "V2"}
+
+    def test_query_no_matches(self):
+        """Test query with no matching results."""
+        summary = VerdictSummary.from_verdicts(self._create_test_verdicts())
+        results = summary.query(
+            severity=Severity.CRITICAL,
+            category=EvaluationCategory.HELPFULNESS,
+        )
+
+        assert len(results) == 0
+
+    def test_summary_warning_status(self):
+        """Test summary with warning status (medium/low but no critical/high)."""
+        verdicts = [
+            Verdict(
+                id="V1",
+                title="Medium",
+                description="Medium issue",
+                severity=Severity.MEDIUM,
+                category=EvaluationCategory.CORRECTNESS,
+            ),
+            Verdict(
+                id="V2",
+                title="Low",
+                description="Low issue",
+                severity=Severity.LOW,
+                category=EvaluationCategory.HELPFULNESS,
+            ),
+        ]
+        summary = VerdictSummary.from_verdicts(verdicts)
+
+        assert summary.overall_status == "warning"
+        assert summary.medium_count == 1
+        assert summary.low_count == 1
+
+
+class TestEvidenceSerialization:
+    """Test Evidence serialization."""
+
+    def test_to_dict(self):
+        """Test evidence to_dict method."""
+        evidence = Evidence(
+            type="tool_call",
+            source="turn_3",
+            content="Called search API",
+            metadata={"tool": "search", "args": {"q": "test"}},
+        )
+        data = evidence.to_dict()
+
+        assert data["type"] == "tool_call"
+        assert data["source"] == "turn_3"
+        assert data["content"] == "Called search API"
+        assert data["metadata"]["tool"] == "search"
+        assert "timestamp" in data
+
+
+class TestEvaluationContextSerialization:
+    """Test EvaluationContext serialization."""
+
+    def test_to_dict(self):
+        """Test context to_dict method."""
+        context = EvaluationContext(
+            input_messages=["Hello", "How are you?"],
+            actual_output="I'm doing well!",
+            expected_output="Good response",
+            tool_calls=[{"name": "greet"}],
+            test_case_id="TC-001",
+            agent_id="agent-1",
+            response_time_ms=100,
+        )
+        data = context.to_dict()
+
+        assert data["input_messages"] == ["Hello", "How are you?"]
+        assert data["actual_output"] == "I'm doing well!"
+        assert data["expected_output"] == "Good response"
+        assert len(data["tool_calls"]) == 1
+        assert data["test_case_id"] == "TC-001"
+        assert data["response_time_ms"] == 100
