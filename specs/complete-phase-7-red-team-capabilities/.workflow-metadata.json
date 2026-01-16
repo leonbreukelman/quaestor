@@ -1,0 +1,17 @@
+{
+  "feature_description": "Complete Phase 7: Red Team Capabilities",
+  "complexity": "complex",
+  "generated_at": "2026-01-15T14:40:34.959053",
+  "entities_count": 0,
+  "tasks_count": 0,
+  "files_generated": 0,
+  "agents_completed": [],
+  "artifacts_generated": {
+    "spec_md": true,
+    "plan_md": false,
+    "tasks_md": false,
+    "research_md": false,
+    "data_model_md": false,
+    "quickstart_md": false
+  }
+}

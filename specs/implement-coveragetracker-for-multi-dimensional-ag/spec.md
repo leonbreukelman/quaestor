@@ -60,7 +60,7 @@ As a **Test Manager**, I want to **consolidate coverage metrics from multiple te
 
 ### CoverageSession
 **Type**: entity
-**Description**: 
+**Description**:
 
 ## Functional Requirements
 

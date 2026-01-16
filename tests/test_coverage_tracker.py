@@ -95,7 +95,16 @@ class TestCoverageReport:
                 dimension=CoverageDimension.TOOL,
                 total_items=10,
                 covered_items={"tool1", "tool2"},
-                uncovered_items={"tool3", "tool4", "tool5", "tool6", "tool7", "tool8", "tool9", "tool10"},
+                uncovered_items={
+                    "tool3",
+                    "tool4",
+                    "tool5",
+                    "tool6",
+                    "tool7",
+                    "tool8",
+                    "tool9",
+                    "tool10",
+                },
             ),
             CoverageDimension.STATE: DimensionCoverage(
                 dimension=CoverageDimension.STATE,
@@ -465,7 +474,9 @@ class TestCoverageTrackerIntegration:
         report = tracker.generate_report(metadata={"test": "agent_flow"})
 
         # Verify results
-        assert report.get_dimension(CoverageDimension.TOOL).coverage_percentage == pytest.approx(33.33, rel=0.01)
+        assert report.get_dimension(CoverageDimension.TOOL).coverage_percentage == pytest.approx(
+            33.33, rel=0.01
+        )
         assert report.get_dimension(CoverageDimension.STATE).coverage_percentage == 100.0
         assert report.get_dimension(CoverageDimension.TRANSITION).coverage_percentage == 100.0
         assert report.get_dimension(CoverageDimension.INVARIANT).coverage_percentage == 100.0

@@ -1,6 +1,5 @@
 """Tests for the pattern learning system."""
 
-import json
 import tempfile
 from pathlib import Path
 

@@ -98,9 +98,7 @@ class CoverageReport:
             "timestamp": self.timestamp.isoformat(),
             "overall_coverage": round(self.overall_coverage, 2),
             "has_gaps": self.has_gaps,
-            "dimensions": {
-                dim.value: cov.to_dict() for dim, cov in self.dimensions.items()
-            },
+            "dimensions": {dim.value: cov.to_dict() for dim, cov in self.dimensions.items()},
             "metadata": self.metadata,
         }
 
