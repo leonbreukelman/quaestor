@@ -10,7 +10,6 @@ Part of Phase 7: Red Team Capabilities.
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
 
 from quaestor.redteam.adapter import DeepTeamAdapter, MockRedTeamAdapter
 from quaestor.redteam.config import RedTeamConfigLoader
