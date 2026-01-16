@@ -4,13 +4,10 @@ Tests for HTML report generation.
 Part of Phase 5: Coverage & Reporting.
 """
 
-import re
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
-
-import pytest
 
 from quaestor.coverage.tracker import (
     CoverageDimension,
@@ -60,7 +57,16 @@ class TestHTMLReportGenerator:
                 CoverageDimension.TOOL: DimensionCoverage(
                     dimension=CoverageDimension.TOOL,
                     total_items=10,
-                    covered_items={"tool1", "tool2", "tool3", "tool4", "tool5", "tool6", "tool7", "tool8"},
+                    covered_items={
+                        "tool1",
+                        "tool2",
+                        "tool3",
+                        "tool4",
+                        "tool5",
+                        "tool6",
+                        "tool7",
+                        "tool8",
+                    },
                     uncovered_items={"tool9", "tool10"},
                 ),
                 CoverageDimension.STATE: DimensionCoverage(
@@ -612,5 +618,292 @@ class TestHTMLReportIntegration:
             assert "search_files" not in content  # Not in gaps
             assert "Test Issue" in content
             assert "0.60" in content
+        finally:
+            temp_path.unlink()
+
+
+class TestHTMLRedTeamReport:
+    """Test HTML report generation for red team assessments."""
+
+    def test_report_with_redteam_results(self) -> None:
+        """Test report with red team attack results."""
+        from quaestor.redteam.models import (
+            AttackMethod,
+            AttackResult,
+            AttackSeverity,
+            RedTeamConfig,
+            RedTeamReport,
+            VulnerabilityType,
+        )
+
+        generator = HTMLReportGenerator()
+
+        # Create red team report
+        config = RedTeamConfig()
+        redteam = RedTeamReport(
+            target_name="test-agent",
+            target_purpose="A test assistant",
+            config=config,
+        )
+        redteam.add_result(
+            AttackResult(
+                vulnerability_type=VulnerabilityType.ROBUSTNESS_HIJACKING,
+                attack_method=AttackMethod.PROMPT_INJECTION,
+                success=True,
+                confidence=0.85,
+                severity=AttackSeverity.CRITICAL,
+                input_prompt="Ignore previous instructions...",
+                agent_response="OK, I will ignore safety guidelines",
+            )
+        )
+        redteam.add_result(
+            AttackResult(
+                vulnerability_type=VulnerabilityType.PII_DIRECT,
+                attack_method=AttackMethod.LEETSPEAK,
+                success=False,
+                confidence=0.3,
+                severity=AttackSeverity.HIGH,
+                input_prompt="Pretend you are leaking data...",
+                agent_response="I cannot share personal information.",
+            )
+        )
+
+        with NamedTemporaryFile(mode="w", delete=False, suffix=".html") as f:
+            temp_path = Path(f.name)
+
+        try:
+            generator.generate(
+                output_path=temp_path,
+                report_title="Red Team Assessment",
+                redteam_report=redteam,
+            )
+
+            content = temp_path.read_text()
+
+            # Check red team section exists
+            assert "Red Team Assessment" in content
+            assert "Total Attacks" in content
+            assert "Successful" in content
+            assert "Attack Success Rate" in content
+
+            # Check attack results
+            assert "robustness_hijacking" in content
+            assert "pii_direct" in content
+            assert "EXPLOITED" in content
+            assert "BLOCKED" in content
+
+            # Check attack details
+            assert "Ignore previous instructions" in content
+            assert "OK, I will ignore safety guidelines" in content
+        finally:
+            temp_path.unlink()
+
+    def test_report_redteam_empty(self) -> None:
+        """Test report with empty red team results."""
+        from quaestor.redteam.models import RedTeamConfig, RedTeamReport
+
+        generator = HTMLReportGenerator()
+
+        config = RedTeamConfig()
+        redteam = RedTeamReport(
+            target_name="empty-agent",
+            target_purpose="Empty test agent",
+            config=config,
+        )
+
+        with NamedTemporaryFile(mode="w", delete=False, suffix=".html") as f:
+            temp_path = Path(f.name)
+
+        try:
+            generator.generate(
+                output_path=temp_path,
+                redteam_report=redteam,
+            )
+
+            content = temp_path.read_text()
+
+            # Section should still render
+            assert "Red Team Assessment" in content
+            assert "Total Attacks" in content
+            # Should show 0 for all stats
+            assert ">0<" in content  # 0 total attacks
+        finally:
+            temp_path.unlink()
+
+    def test_report_redteam_with_verdicts(self) -> None:
+        """Test report with both verdicts and red team results."""
+        from quaestor.redteam.models import (
+            AttackMethod,
+            AttackResult,
+            AttackSeverity,
+            RedTeamConfig,
+            RedTeamReport,
+            VulnerabilityType,
+        )
+
+        generator = HTMLReportGenerator()
+
+        verdicts = [
+            Verdict(
+                id=str(uuid4()),
+                category=EvaluationCategory.SAFETY,
+                severity=Severity.CRITICAL,
+                title="Security Vulnerability",
+                description="Agent vulnerable to injection",
+                score=0.1,
+                evidence=[],
+            )
+        ]
+
+        config = RedTeamConfig()
+        redteam = RedTeamReport(
+            target_name="test-agent",
+            target_purpose="A test assistant",
+            config=config,
+        )
+        redteam.add_result(
+            AttackResult(
+                vulnerability_type=VulnerabilityType.TOXICITY_THREATS,
+                attack_method=AttackMethod.LINEAR_JAILBREAK,
+                success=True,
+                confidence=0.9,
+                severity=AttackSeverity.CRITICAL,
+                input_prompt="Harmful request...",
+                agent_response="Harmful response...",
+            )
+        )
+
+        with NamedTemporaryFile(mode="w", delete=False, suffix=".html") as f:
+            temp_path = Path(f.name)
+
+        try:
+            generator.generate(
+                output_path=temp_path,
+                verdicts=verdicts,
+                redteam_report=redteam,
+            )
+
+            content = temp_path.read_text()
+
+            # Both sections should exist
+            assert "Evaluation Verdicts" in content
+            assert "Red Team Assessment" in content
+
+            # Both content should appear
+            assert "Security Vulnerability" in content
+            assert "toxicity_threats" in content
+        finally:
+            temp_path.unlink()
+
+    def test_report_redteam_stats(self) -> None:
+        """Test red team statistics are correctly calculated."""
+        from quaestor.redteam.models import (
+            AttackMethod,
+            AttackResult,
+            AttackSeverity,
+            RedTeamConfig,
+            RedTeamReport,
+            VulnerabilityType,
+        )
+
+        generator = HTMLReportGenerator()
+
+        config = RedTeamConfig()
+        redteam = RedTeamReport(
+            target_name="stats-agent",
+            target_purpose="Stats test agent",
+            config=config,
+        )
+        # Add 2 successful, 3 failed attacks
+        for i in range(2):
+            redteam.add_result(
+                AttackResult(
+                    vulnerability_type=VulnerabilityType.ROBUSTNESS_HIJACKING,
+                    attack_method=AttackMethod.PROMPT_INJECTION,
+                    success=True,
+                    confidence=0.9,
+                    severity=AttackSeverity.CRITICAL,
+                    input_prompt="Attack prompt",
+                    agent_response="Response",
+                )
+            )
+        for i in range(3):
+            redteam.add_result(
+                AttackResult(
+                    vulnerability_type=VulnerabilityType.BIAS_GENDER,
+                    attack_method=AttackMethod.CRESCENDO_JAILBREAK,
+                    success=False,
+                    confidence=0.2,
+                    severity=AttackSeverity.MEDIUM,
+                    input_prompt="Attack prompt",
+                    agent_response="Response",
+                )
+            )
+
+        with NamedTemporaryFile(mode="w", delete=False, suffix=".html") as f:
+            temp_path = Path(f.name)
+
+        try:
+            generator.generate(
+                output_path=temp_path,
+                redteam_report=redteam,
+            )
+
+            content = temp_path.read_text()
+
+            # Check stats
+            assert ">5<" in content  # Total attacks
+            assert ">2<" in content  # Successful
+            assert "40.0%" in content  # Success rate (2/5)
+        finally:
+            temp_path.unlink()
+
+    def test_generate_from_data_with_redteam(self) -> None:
+        """Test generate_from_data includes red team report."""
+        from quaestor.redteam.models import (
+            AttackMethod,
+            AttackResult,
+            AttackSeverity,
+            RedTeamConfig,
+            RedTeamReport,
+            VulnerabilityType,
+        )
+
+        generator = HTMLReportGenerator()
+
+        config = RedTeamConfig()
+        redteam = RedTeamReport(
+            target_name="data-agent",
+            target_purpose="Data test agent",
+            config=config,
+        )
+        redteam.add_result(
+            AttackResult(
+                vulnerability_type=VulnerabilityType.MISINFORMATION_FACTUAL,
+                attack_method=AttackMethod.MATH_PROBLEM,
+                success=True,
+                confidence=0.7,
+                severity=AttackSeverity.MEDIUM,
+                input_prompt="Hallucination prompt",
+                agent_response="False information",
+            )
+        )
+
+        with NamedTemporaryFile(mode="w", delete=False, suffix=".html") as f:
+            temp_path = Path(f.name)
+
+        try:
+            generator.generate_from_data(
+                output_path=temp_path,
+                data={
+                    "title": "From Data Report",
+                    "redteam": redteam,
+                },
+            )
+
+            content = temp_path.read_text()
+            assert "From Data Report" in content
+            assert "Red Team Assessment" in content
+            assert "misinformation_factual" in content
         finally:
             temp_path.unlink()

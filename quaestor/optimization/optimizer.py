@@ -72,9 +72,7 @@ class QuaestorOptimizer:
         self.teacher_model = teacher_model
         self._optimizers: dict[str, MIPROv2] = {}
 
-    def create_metric_from_verdicts(
-        self, min_score: float = 0.8
-    ) -> Callable:
+    def create_metric_from_verdicts(self, min_score: float = 0.8) -> Callable:
         """
         Create an optimization metric from verdicts.
 
@@ -151,9 +149,7 @@ class QuaestorOptimizer:
 
         # Use verdict metric by default
         if metric is None:
-            metric = self.create_metric_from_verdicts(
-                min_score=self.config.metric_threshold
-            )
+            metric = self.create_metric_from_verdicts(min_score=self.config.metric_threshold)
 
         # Create or get cached optimizer
         module_name = module.__class__.__name__
@@ -167,9 +163,7 @@ class QuaestorOptimizer:
 
             # Add teacher model if specified
             if self.teacher_model:
-                optimizer_kwargs["teacher_settings"] = {
-                    "lm": dspy.LM(self.teacher_model)
-                }
+                optimizer_kwargs["teacher_settings"] = {"lm": dspy.LM(self.teacher_model)}
 
             self._optimizers[module_name] = MIPROv2(**optimizer_kwargs)
 
@@ -191,9 +185,7 @@ class QuaestorOptimizer:
 
         return optimized_module
 
-    def save_optimized_module(
-        self, module: dspy.Module, output_path: str | Path
-    ) -> None:
+    def save_optimized_module(self, module: dspy.Module, output_path: str | Path) -> None:
         """
         Save optimized module to disk.
 

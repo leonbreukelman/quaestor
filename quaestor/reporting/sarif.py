@@ -9,13 +9,13 @@ Part of Phase 5: Coverage & Reporting.
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from quaestor.analysis.linter import Category, LintIssue, Severity
+from quaestor.analysis.linter import LintIssue, Severity
 from quaestor.evaluation.models import Severity as VerdictSeverity
 from quaestor.evaluation.models import Verdict
+from quaestor.redteam.models import AttackResult, AttackSeverity, RedTeamReport
 
 
 @dataclass
@@ -277,6 +277,123 @@ class SARIFReport:
             )
         )
 
+    def add_attack_result(
+        self,
+        attack: AttackResult,
+        target_name: str = "agent",
+    ) -> None:
+        """
+        Add a red team attack result to the SARIF report.
+
+        Only successful attacks (vulnerabilities found) are reported.
+
+        Args:
+            attack: Attack result from red team testing
+            target_name: Name of the tested target/agent
+        """
+        # Only report successful attacks (actual vulnerabilities)
+        if not attack.success:
+            return
+
+        # Map attack severity to SARIF level
+        severity_value = (
+            attack.severity.value
+            if isinstance(attack.severity, AttackSeverity)
+            else attack.severity
+        )
+        level_map = {
+            "critical": "error",
+            "high": "error",
+            "medium": "warning",
+            "low": "warning",
+            "info": "note",
+        }
+        level = level_map.get(severity_value, "warning")
+
+        # Get vulnerability type as string
+        vuln_type = (
+            attack.vulnerability_type.value
+            if hasattr(attack.vulnerability_type, "value")
+            else str(attack.vulnerability_type)
+        )
+
+        # Get attack method as string
+        attack_method = (
+            attack.attack_method.value
+            if hasattr(attack.attack_method, "value")
+            else str(attack.attack_method)
+        )
+
+        # Create rule if not exists
+        rule_id = f"RT-{vuln_type}"
+        if rule_id not in self.rules:
+            self.add_rule(
+                SARIFRule(
+                    id=rule_id,
+                    name=vuln_type.replace("_", " ").title(),
+                    short_description=f"Vulnerability: {vuln_type}",
+                    full_description=(
+                        f"The agent is vulnerable to {vuln_type} attacks. "
+                        f"Detected using {attack_method} attack method."
+                    ),
+                    help_text=attack.remediation,
+                    default_level=level,
+                )
+            )
+
+        # Create result - use target name as location since this is agent testing
+        locations = [
+            SARIFLocation(uri=f"agent://{target_name}", start_line=1)
+        ]
+
+        # Build properties
+        properties: dict[str, Any] = {
+            "attack_id": attack.id,
+            "vulnerability_type": vuln_type,
+            "attack_method": attack_method,
+            "severity": severity_value,
+            "confidence": attack.confidence,
+        }
+        if attack.evidence:
+            properties["evidence"] = attack.evidence
+
+        # Build message with input/output if available
+        message_parts = [f"Security vulnerability detected: {vuln_type}"]
+        if attack.input_prompt:
+            # Truncate long prompts
+            prompt_preview = attack.input_prompt[:200]
+            if len(attack.input_prompt) > 200:
+                prompt_preview += "..."
+            message_parts.append(f"Attack prompt: {prompt_preview}")
+        if attack.agent_response:
+            response_preview = attack.agent_response[:200]
+            if len(attack.agent_response) > 200:
+                response_preview += "..."
+            message_parts.append(f"Vulnerable response: {response_preview}")
+
+        self.add_result(
+            SARIFResult(
+                rule_id=rule_id,
+                message=" | ".join(message_parts),
+                level=level,
+                locations=locations,
+                properties=properties,
+            )
+        )
+
+    def add_redteam_report(
+        self,
+        report: RedTeamReport,
+    ) -> None:
+        """
+        Add all successful attacks from a red team report.
+
+        Args:
+            report: Complete red team report
+        """
+        for attack in report.results:
+            self.add_attack_result(attack, target_name=report.target_name)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert report to SARIF dictionary."""
         return {
@@ -356,6 +473,31 @@ def create_sarif_from_verdicts(
 
     for verdict in verdicts:
         report.add_verdict(verdict)
+
+    if output_path:
+        report.write(output_path)
+
+    return report
+
+
+def create_sarif_from_redteam(
+    redteam_report: RedTeamReport,
+    output_path: str | Path | None = None,
+) -> SARIFReport:
+    """
+    Create SARIF report from red team assessment results.
+
+    Only includes successful attacks (actual vulnerabilities).
+
+    Args:
+        redteam_report: Red team assessment report
+        output_path: Optional path to write the report
+
+    Returns:
+        SARIFReport object
+    """
+    report = SARIFReport()
+    report.add_redteam_report(redteam_report)
 
     if output_path:
         report.write(output_path)

@@ -298,6 +298,172 @@ def init(
     console.print("[dim]Creates quaestor.yaml with project defaults[/dim]")
 
 
+@app.command()
+def redteam(
+    path: str = typer.Argument(None, help="Path to agent code or HTTP endpoint URL"),
+    playbook: str = typer.Option(
+        "standard", "--playbook", "-p", help="Attack playbook: quick, standard, comprehensive, owasp-llm"
+    ),
+    config: str = typer.Option(None, "--config", "-c", help="Path to YAML config file"),
+    output: str = typer.Option(None, "--output", "-o", help="Output directory for results"),
+    format_: str = typer.Option("console", "--format", "-f", help="Output format: console, json, html, sarif"),
+    mock: bool = typer.Option(False, "--mock", help="Use mock mode (no DeepTeam, synthetic results)"),
+    list_playbooks: bool = typer.Option(False, "--list-playbooks", help="List available playbooks"),
+) -> None:
+    """
+    Run adversarial red team testing against an agent.
+
+    Uses DeepTeam to simulate attacks and detect vulnerabilities:
+    - Bias detection (gender, race, political, religion)
+    - PII leakage testing
+    - Toxicity probing
+    - Prompt injection attacks
+    - Jailbreak attempts
+
+    Requires: uv sync --extra redteam
+    """
+    from quaestor.redteam.config import RedTeamConfigLoader
+
+    # List playbooks mode
+    if list_playbooks:
+        console.print(Panel("[bold]Available Red Team Playbooks[/bold]", border_style="red"))
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Playbook", style="cyan")
+        table.add_column("Description")
+        for name, desc in RedTeamConfigLoader.list_playbooks().items():
+            table.add_row(name, desc)
+        console.print(table)
+        raise typer.Exit()
+
+    # Path is required for actual red teaming
+    if not path:
+        console.print("[red]Error:[/red] PATH argument is required for red team testing")
+        console.print("[dim]Use --list-playbooks to see available playbooks[/dim]")
+        raise typer.Exit(1)
+
+    # Load configuration
+    if config:
+        try:
+            rt_config = RedTeamConfigLoader.from_yaml(config)
+        except FileNotFoundError:
+            console.print(f"[red]Error:[/red] Config file not found: {config}")
+            raise typer.Exit(1)
+    else:
+        try:
+            rt_config = RedTeamConfigLoader.from_playbook(playbook)
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1)
+
+    if output:
+        rt_config.output_dir = output
+
+    console.print(
+        Panel(
+            f"[bold]Red Team Target:[/bold] {path}\n"
+            f"[dim]Playbook: {playbook} | "
+            f"Vulnerabilities: {len(rt_config.vulnerabilities)} | "
+            f"Attacks: {len(rt_config.attacks)}[/dim]"
+            + ("\n[yellow]Mock mode: Synthetic results[/yellow]" if mock else ""),
+            title="🔴 Quaestor Red Team",
+            border_style="red",
+        )
+    )
+
+    # Import runner
+    from quaestor.redteam.runner import RedTeamRunner
+
+    runner = RedTeamRunner(config=rt_config, use_mock=mock)
+
+    if not mock and not runner.adapter.is_available:
+        console.print("[red]Error:[/red] DeepTeam not installed.")
+        console.print("[dim]Run: uv sync --extra redteam[/dim]")
+        console.print("[dim]Or use --mock for synthetic testing[/dim]")
+        raise typer.Exit(1)
+
+    # Run red team assessment
+    import asyncio
+
+    console.print("\n[bold]Running attacks...[/bold]")
+
+    # Determine target type and run appropriate test
+    if path.startswith("http://") or path.startswith("https://"):
+        # HTTP endpoint
+        report = asyncio.run(runner.run_against_http(url=path))
+    else:
+        # File path or other - use mock agent for now
+        report = asyncio.run(runner.run_against_mock(target_name=path))
+
+    # Display results
+    _display_redteam_report(report, format_)
+
+    # Exit with error if vulnerabilities found
+    if report.is_vulnerable:
+        console.print(f"\n[red]⚠ {report.successful_attacks} vulnerabilities detected![/red]")
+        raise typer.Exit(1)
+    else:
+        console.print("\n[green]✓ No vulnerabilities detected[/green]")
+
+
+def _display_redteam_report(report: "RedTeamReport", format_: str) -> None:  # noqa: F821
+    """Display red team report in requested format."""
+    from quaestor.redteam.models import RedTeamReport  # noqa: F811
+
+    if format_ == "json":
+        import json
+        console.print(json.dumps(report.to_dict(), indent=2, default=str))
+        return
+
+    # Console format
+    console.print(f"\n[bold]Red Team Report: {report.target_name}[/bold]")
+    console.print(f"[dim]Duration: {report.duration_seconds:.2f}s[/dim]")
+
+    # Summary table
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Total Attacks", str(report.total_attacks))
+    table.add_row(
+        "Successful Attacks",
+        f"[red]{report.successful_attacks}[/red]" if report.successful_attacks > 0 else "0"
+    )
+    table.add_row("Success Rate", f"{report.success_rate:.1f}%")
+    table.add_row(
+        "Vulnerabilities Found",
+        ", ".join(str(v) for v in report.vulnerabilities_found) or "None"
+    )
+
+    console.print(table)
+
+    # Detailed results for successful attacks
+    if report.successful_attacks > 0:
+        console.print("\n[bold red]Vulnerabilities Detected:[/bold red]")
+        vuln_table = Table(show_header=True, header_style="bold")
+        vuln_table.add_column("Type", style="red")
+        vuln_table.add_column("Attack", style="yellow")
+        vuln_table.add_column("Severity")
+        vuln_table.add_column("Evidence")
+
+        for result in report.results:
+            if result.success:
+                severity_color = {
+                    "critical": "red bold",
+                    "high": "red",
+                    "medium": "yellow",
+                    "low": "green",
+                    "info": "blue",
+                }.get(str(result.severity), "white")
+                vuln_table.add_row(
+                    str(result.vulnerability_type),
+                    str(result.attack_method),
+                    f"[{severity_color}]{result.severity}[/{severity_color}]",
+                    (result.evidence or "")[:50] + "..." if result.evidence and len(result.evidence) > 50 else result.evidence or "-",
+                )
+
+        console.print(vuln_table)
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================

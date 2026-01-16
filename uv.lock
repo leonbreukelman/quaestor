@@ -922,6 +922,25 @@ wheels = [
 ]
 
 [[package]]
+name = "deepteam"
+version = "1.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "deepeval" },
+    { name = "grpcio" },
+    { name = "openai" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "tabulate" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d2/ae/6bec73dda4428e202b34c265644adfa3f59d0cba0ac4db9c31f8c4bccdef/deepteam-1.0.5.tar.gz", hash = "sha256:5080c6e58788f34665d5316e732e9ca6ce76b6ae229f08ccaef17acbd2da2843", size = 337490, upload-time = "2026-01-06T06:09:10.293Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/15/46c317b704c167e4dffdb9f91cac31e8adc2995e972568cac957325287bb/deepteam-1.0.5-py3-none-any.whl", hash = "sha256:cc17acc133663cbf884863b46d9d66f0d5994749acf01681c432f1c4fa2bf149", size = 600298, upload-time = "2026-01-06T06:09:06.778Z" },
+]
+
+[[package]]
 name = "defusedxml"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3774,6 +3793,9 @@ docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
 ]
+redteam = [
+    { name = "deepteam" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -3787,6 +3809,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.0.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "deepeval", specifier = ">=2.0.0" },
+    { name = "deepteam", marker = "extra == 'redteam'", specifier = ">=1.0.4" },
     { name = "dspy-ai", specifier = ">=2.5.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
@@ -3806,7 +3829,7 @@ requires-dist = [
     { name = "tree-sitter-python", specifier = ">=0.21.0" },
     { name = "typer", specifier = ">=0.9.0" },
 ]
-provides-extras = ["dev", "docs"]
+provides-extras = ["redteam", "dev", "docs"]
 
 [package.metadata.requires-dev]
 dev = [
