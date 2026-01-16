@@ -4,9 +4,12 @@ Tests for the Red Team module.
 Tests cover models, configuration, and adapter functionality.
 """
 
-import pytest
-from datetime import datetime, UTC
 
+import pytest
+
+from quaestor.evaluation.models import Severity
+from quaestor.redteam.adapter import DeepTeamAdapter, MockRedTeamAdapter
+from quaestor.redteam.config import RedTeamConfigLoader
 from quaestor.redteam.models import (
     AttackMethod,
     AttackResult,
@@ -15,10 +18,6 @@ from quaestor.redteam.models import (
     RedTeamReport,
     VulnerabilityType,
 )
-from quaestor.redteam.config import RedTeamConfigLoader
-from quaestor.redteam.adapter import DeepTeamAdapter, MockRedTeamAdapter
-from quaestor.evaluation.models import Severity
-
 
 # =============================================================================
 # VulnerabilityType Tests
@@ -483,7 +482,7 @@ class TestMockRedTeamAdapter:
         )
         adapter = MockRedTeamAdapter(config=config)
 
-        async def agent_callback(input_text: str) -> str:
+        async def agent_callback(_input_text: str) -> str:
             return "I'm a safe AI assistant"
 
         # Run multiple times to increase chance of finding vulnerabilities

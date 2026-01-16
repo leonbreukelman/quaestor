@@ -347,13 +347,13 @@ def redteam(
             rt_config = RedTeamConfigLoader.from_yaml(config)
         except FileNotFoundError:
             console.print(f"[red]Error:[/red] Config file not found: {config}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
     else:
         try:
             rt_config = RedTeamConfigLoader.from_playbook(playbook)
         except ValueError as e:
             console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     if output:
         rt_config.output_dir = output
@@ -407,7 +407,7 @@ def redteam(
 
 def _display_redteam_report(report: "RedTeamReport", format_: str) -> None:  # noqa: F821
     """Display red team report in requested format."""
-    from quaestor.redteam.models import RedTeamReport  # noqa: F811
+    # Import is at top of file via TYPE_CHECKING for type hints
 
     if format_ == "json":
         import json

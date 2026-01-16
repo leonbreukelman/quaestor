@@ -295,7 +295,7 @@ class TestSARIFFromIssues:
             (Severity.INFO, "note"),
         ]
 
-        for severity, expected_level in test_cases:
+        for severity, _expected_level in test_cases:
             issue = LintIssue(
                 rule_id=f"RULE-{severity.value}",
                 category=Category.SECURITY,
@@ -405,7 +405,7 @@ class TestSARIFFromIssues:
             temp_path = Path(f.name)
 
         try:
-            report = create_sarif_from_issues(issues, temp_path)
+            create_sarif_from_issues(issues, temp_path)
             assert temp_path.exists()
 
             content = json.loads(temp_path.read_text())
@@ -455,7 +455,7 @@ class TestSARIFFromVerdicts:
             (VerdictSeverity.INFO, "note"),
         ]
 
-        for severity, expected_level in test_cases:
+        for severity, _expected_level in test_cases:
             verdict = Verdict(
                 id=str(uuid4()),
                 category=EvaluationCategory.PERFORMANCE,
@@ -588,7 +588,7 @@ class TestSARIFFromVerdicts:
             temp_path = Path(f.name)
 
         try:
-            report = create_sarif_from_verdicts(verdicts, temp_path)
+            create_sarif_from_verdicts(verdicts, temp_path)
             assert temp_path.exists()
 
             content = json.loads(temp_path.read_text())

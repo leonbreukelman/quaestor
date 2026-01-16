@@ -815,7 +815,7 @@ class TestHTMLRedTeamReport:
             config=config,
         )
         # Add 2 successful, 3 failed attacks
-        for i in range(2):
+        for _ in range(2):
             redteam.add_result(
                 AttackResult(
                     vulnerability_type=VulnerabilityType.ROBUSTNESS_HIJACKING,
@@ -827,7 +827,7 @@ class TestHTMLRedTeamReport:
                     agent_response="Response",
                 )
             )
-        for i in range(3):
+        for _ in range(3):
             redteam.add_result(
                 AttackResult(
                     vulnerability_type=VulnerabilityType.BIAS_GENDER,
