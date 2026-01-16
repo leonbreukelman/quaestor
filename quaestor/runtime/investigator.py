@@ -9,10 +9,11 @@ Part of Phase 3: Runtime Testing.
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 import dspy
 
@@ -302,8 +303,8 @@ class QuaestorInvestigator:
         config: InvestigatorConfig | None = None,
         use_dspy: bool = False,
         max_turns: int = 10,
-        probe_type_weights: Optional[Dict[str, float]] = None,
-        termination_criteria: Optional[Callable[[str], bool]] = None,
+        probe_type_weights: dict[str, float] | None = None,
+        termination_criteria: Callable[[str], bool] | None = None,
     ):
         """
         Initialize the investigator with session configuration.
