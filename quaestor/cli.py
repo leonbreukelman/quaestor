@@ -302,12 +302,19 @@ def init(
 def redteam(
     path: str = typer.Argument(None, help="Path to agent code or HTTP endpoint URL"),
     playbook: str = typer.Option(
-        "standard", "--playbook", "-p", help="Attack playbook: quick, standard, comprehensive, owasp-llm"
+        "standard",
+        "--playbook",
+        "-p",
+        help="Attack playbook: quick, standard, comprehensive, owasp-llm",
     ),
     config: str = typer.Option(None, "--config", "-c", help="Path to YAML config file"),
     output: str = typer.Option(None, "--output", "-o", help="Output directory for results"),
-    format_: str = typer.Option("console", "--format", "-f", help="Output format: console, json, html, sarif"),
-    mock: bool = typer.Option(False, "--mock", help="Use mock mode (no DeepTeam, synthetic results)"),
+    format_: str = typer.Option(
+        "console", "--format", "-f", help="Output format: console, json, html, sarif"
+    ),
+    mock: bool = typer.Option(
+        False, "--mock", help="Use mock mode (no DeepTeam, synthetic results)"
+    ),
     list_playbooks: bool = typer.Option(False, "--list-playbooks", help="List available playbooks"),
 ) -> None:
     """
@@ -411,6 +418,7 @@ def _display_redteam_report(report: "RedTeamReport", format_: str) -> None:  # n
 
     if format_ == "json":
         import json
+
         console.print(json.dumps(report.to_dict(), indent=2, default=str))
         return
 
@@ -426,12 +434,11 @@ def _display_redteam_report(report: "RedTeamReport", format_: str) -> None:  # n
     table.add_row("Total Attacks", str(report.total_attacks))
     table.add_row(
         "Successful Attacks",
-        f"[red]{report.successful_attacks}[/red]" if report.successful_attacks > 0 else "0"
+        f"[red]{report.successful_attacks}[/red]" if report.successful_attacks > 0 else "0",
     )
     table.add_row("Success Rate", f"{report.success_rate:.1f}%")
     table.add_row(
-        "Vulnerabilities Found",
-        ", ".join(str(v) for v in report.vulnerabilities_found) or "None"
+        "Vulnerabilities Found", ", ".join(str(v) for v in report.vulnerabilities_found) or "None"
     )
 
     console.print(table)
@@ -458,7 +465,9 @@ def _display_redteam_report(report: "RedTeamReport", format_: str) -> None:  # n
                     str(result.vulnerability_type),
                     str(result.attack_method),
                     f"[{severity_color}]{result.severity}[/{severity_color}]",
-                    (result.evidence or "")[:50] + "..." if result.evidence and len(result.evidence) > 50 else result.evidence or "-",
+                    (result.evidence or "")[:50] + "..."
+                    if result.evidence and len(result.evidence) > 50
+                    else result.evidence or "-",
                 )
 
         console.print(vuln_table)

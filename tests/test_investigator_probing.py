@@ -74,4 +74,3 @@ async def test_termination_criteria():
 
     entries = investigator.probe_history.entries
     assert len(entries) == 2  # Session should terminate after 2 turns
-

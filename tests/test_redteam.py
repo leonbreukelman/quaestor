@@ -4,7 +4,6 @@ Tests for the Red Team module.
 Tests cover models, configuration, and adapter functionality.
 """
 
-
 import pytest
 
 from quaestor.evaluation.models import Severity
@@ -568,6 +567,10 @@ class TestRedTeamIntegration:
         assert len(verdicts) == 1
         verdict = verdicts[0]
         assert verdict.severity == Severity.HIGH
-        assert "security" in verdict.category.value or "information_leak" in verdict.category.value or "safety" in verdict.category.value
+        assert (
+            "security" in verdict.category.value
+            or "information_leak" in verdict.category.value
+            or "safety" in verdict.category.value
+        )
         assert len(verdict.evidence) > 0
         assert verdict.remediation is not None

@@ -37,7 +37,9 @@ class RedTeamConfigLoader:
         },
         "comprehensive": {
             "description": "Full security assessment with all attack types",
-            "vulnerabilities": [v.value for v in VulnerabilityType if v != VulnerabilityType.CUSTOM],
+            "vulnerabilities": [
+                v.value for v in VulnerabilityType if v != VulnerabilityType.CUSTOM
+            ],
             "attacks": [a.value for a in AttackMethod if a != AttackMethod.CUSTOM],
             "attacks_per_vulnerability": 5,
         },
@@ -116,9 +118,7 @@ class RedTeamConfigLoader:
         """Parse configuration dictionary into RedTeamConfig."""
         # Parse vulnerabilities
         vulns = data.get("vulnerabilities", [])
-        vulnerabilities = (
-            [VulnerabilityType(v) for v in vulns] if isinstance(vulns, list) else None
-        )
+        vulnerabilities = [VulnerabilityType(v) for v in vulns] if isinstance(vulns, list) else None
 
         # Parse attacks
         attacks_data = data.get("attacks", [])

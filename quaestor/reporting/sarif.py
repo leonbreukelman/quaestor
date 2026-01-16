@@ -342,9 +342,7 @@ class SARIFReport:
             )
 
         # Create result - use target name as location since this is agent testing
-        locations = [
-            SARIFLocation(uri=f"agent://{target_name}", start_line=1)
-        ]
+        locations = [SARIFLocation(uri=f"agent://{target_name}", start_line=1)]
 
         # Build properties
         properties: dict[str, Any] = {
