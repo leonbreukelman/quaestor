@@ -72,7 +72,7 @@ class QuaestorOptimizer:
         self.teacher_model = teacher_model
         self._optimizers: dict[str, MIPROv2] = {}
 
-    def create_metric_from_verdicts(self, min_score: float = 0.8) -> Callable:
+    def create_metric_from_verdicts(self, min_score: float = 0.8) -> Callable:  # noqa: ARG002
         """
         Create an optimization metric from verdicts.
 
@@ -83,7 +83,7 @@ class QuaestorOptimizer:
             Metric function for DSPy optimization
         """
 
-        def verdict_metric(example: dspy.Example, prediction: Any, trace=None) -> float:
+        def verdict_metric(example: dspy.Example, prediction: Any, trace=None) -> float:  # noqa: ARG001
             """
             Evaluate prediction quality based on verdict scores.
 

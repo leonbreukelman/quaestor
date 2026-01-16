@@ -227,7 +227,7 @@ class TestQuaestorOptimizer:
         mock_mipro.return_value = mock_optimizer
         mock_optimizer.compile.return_value = SimpleModule()
 
-        def custom_metric(example, prediction, trace=None) -> float:
+        def custom_metric(_example, _prediction, _trace=None) -> float:
             return 1.0
 
         trainset = [dspy.Example(question="test").with_inputs("question")]
@@ -377,7 +377,7 @@ class TestQuickOptimize:
         mock_optimizer_class.return_value = mock_optimizer
         mock_optimizer.optimize.return_value = SimpleModule()
 
-        def custom_metric(example, prediction, trace=None) -> float:
+        def custom_metric(_example, _prediction, _trace=None) -> float:
             return 1.0
 
         examples = [({"question": "test"}, "answer")]
