@@ -47,10 +47,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Red team capabilities - ON ROADMAP, deepteam availability TBD
-# redteam = [
-#     "deepteam>=0.1.0",
-# ]
+# Red team capabilities - DeepTeam v1.0.4 available as of Nov 2025
+redteam = [
+    "deepteam>=1.0.4",
+]
 
 dev = [
     "pytest>=8.0.0",
