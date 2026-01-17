@@ -4,6 +4,8 @@ Tests for the Red Team module.
 Tests cover models, configuration, and adapter functionality.
 """
 
+from pathlib import Path
+
 import pytest
 
 from quaestor.evaluation.models import Severity
@@ -574,3 +576,497 @@ class TestRedTeamIntegration:
         )
         assert len(verdict.evidence) > 0
         assert verdict.remediation is not None
+
+
+# =============================================================================
+# DeepTeamAdapter Additional Coverage Tests
+# =============================================================================
+
+
+class TestDeepTeamAdapterCoverage:
+    """Additional tests to improve adapter.py coverage."""
+
+    def test_is_available_property_caching(self) -> None:
+        """Test that is_available caches the result."""
+        adapter = DeepTeamAdapter()
+        # Access twice to test caching
+        _ = adapter.is_available
+        _ = adapter.is_available
+        # Should not raise
+
+    def test_map_vuln_name_to_type_bias(self) -> None:
+        """Test vulnerability name mapping for bias types."""
+        adapter = DeepTeamAdapter()
+
+        assert adapter._map_vuln_name_to_type("bias_gender") == VulnerabilityType.BIAS_GENDER
+        assert adapter._map_vuln_name_to_type("BIAS_GENDER") == VulnerabilityType.BIAS_GENDER
+        assert adapter._map_vuln_name_to_type("race_bias") == VulnerabilityType.BIAS_RACE
+        assert adapter._map_vuln_name_to_type("general_bias") == VulnerabilityType.BIAS_GENDER
+
+    def test_map_vuln_name_to_type_pii(self) -> None:
+        """Test vulnerability name mapping for PII types."""
+        adapter = DeepTeamAdapter()
+
+        assert adapter._map_vuln_name_to_type("pii_leak") == VulnerabilityType.PII_DIRECT
+        assert adapter._map_vuln_name_to_type("PII") == VulnerabilityType.PII_DIRECT
+
+    def test_map_vuln_name_to_type_toxicity(self) -> None:
+        """Test vulnerability name mapping for toxicity."""
+        adapter = DeepTeamAdapter()
+
+        assert (
+            adapter._map_vuln_name_to_type("toxic_content") == VulnerabilityType.TOXICITY_PROFANITY
+        )
+        assert adapter._map_vuln_name_to_type("TOXICITY") == VulnerabilityType.TOXICITY_PROFANITY
+
+    def test_map_vuln_name_to_type_misinformation(self) -> None:
+        """Test vulnerability name mapping for misinformation."""
+        adapter = DeepTeamAdapter()
+
+        assert (
+            adapter._map_vuln_name_to_type("misinformation_factual")
+            == VulnerabilityType.MISINFORMATION_FACTUAL
+        )
+        assert (
+            adapter._map_vuln_name_to_type("MISINFORMATION")
+            == VulnerabilityType.MISINFORMATION_FACTUAL
+        )
+
+    def test_map_vuln_name_to_type_custom(self) -> None:
+        """Test vulnerability name mapping returns CUSTOM for unknown."""
+        adapter = DeepTeamAdapter()
+
+        assert adapter._map_vuln_name_to_type("unknown_type") == VulnerabilityType.CUSTOM
+        assert adapter._map_vuln_name_to_type("xyz123") == VulnerabilityType.CUSTOM
+
+    def test_vuln_to_category_ethics(self) -> None:
+        """Test vulnerability to category mapping for ethics."""
+        adapter = DeepTeamAdapter()
+        from quaestor.evaluation.models import EvaluationCategory
+
+        # bias_gender contains 'bias' -> ETHICS
+        result = adapter._vuln_to_category(VulnerabilityType.BIAS_GENDER)
+        assert result == EvaluationCategory.ETHICS
+
+        # toxicity_profanity contains 'toxic' -> ETHICS
+        result = adapter._vuln_to_category(VulnerabilityType.TOXICITY_PROFANITY)
+        assert result == EvaluationCategory.ETHICS
+
+    def test_vuln_to_category_info_leak(self) -> None:
+        """Test vulnerability to category mapping for info leak."""
+        adapter = DeepTeamAdapter()
+        from quaestor.evaluation.models import EvaluationCategory
+
+        # pii_direct contains 'pii' -> INFORMATION_LEAK
+        result = adapter._vuln_to_category(VulnerabilityType.PII_DIRECT)
+        assert result == EvaluationCategory.INFORMATION_LEAK
+
+    def test_vuln_to_category_correctness(self) -> None:
+        """Test vulnerability to category mapping for correctness."""
+        adapter = DeepTeamAdapter()
+        from quaestor.evaluation.models import EvaluationCategory
+
+        # misinformation_factual contains 'misinformation' -> CORRECTNESS
+        result = adapter._vuln_to_category(VulnerabilityType.MISINFORMATION_FACTUAL)
+        assert result == EvaluationCategory.CORRECTNESS
+
+    def test_vuln_to_category_safety_fallback(self) -> None:
+        """Test vulnerability to category mapping fallback."""
+        adapter = DeepTeamAdapter()
+        from quaestor.evaluation.models import EvaluationCategory
+
+        result = adapter._vuln_to_category(VulnerabilityType.ROBUSTNESS_OVERRELIANCE)
+        assert result == EvaluationCategory.SAFETY
+
+    def test_attack_severity_to_verdict_all_levels(self) -> None:
+        """Test all attack severity to verdict mappings."""
+        adapter = DeepTeamAdapter()
+
+        assert (
+            adapter._attack_severity_to_verdict_severity(AttackSeverity.CRITICAL)
+            == Severity.CRITICAL
+        )
+        assert adapter._attack_severity_to_verdict_severity(AttackSeverity.HIGH) == Severity.HIGH
+        assert (
+            adapter._attack_severity_to_verdict_severity(AttackSeverity.MEDIUM) == Severity.MEDIUM
+        )
+        assert adapter._attack_severity_to_verdict_severity(AttackSeverity.LOW) == Severity.LOW
+        assert adapter._attack_severity_to_verdict_severity(AttackSeverity.INFO) == Severity.INFO
+
+    def test_results_to_verdicts_skips_unsuccessful(self) -> None:
+        """Test that results_to_verdicts skips unsuccessful attacks."""
+        adapter = DeepTeamAdapter()
+        report = RedTeamReport(
+            target_name="test",
+            target_purpose="test",
+            config=RedTeamConfig(),
+        )
+
+        # Add unsuccessful attack
+        result = AttackResult(
+            attack_method=AttackMethod.PROMPT_INJECTION,
+            vulnerability_type=VulnerabilityType.PII_DIRECT,
+            input_prompt="test",
+            agent_response="I cannot do that",
+            success=False,
+        )
+        report.add_result(result)
+
+        verdicts = adapter.results_to_verdicts(report)
+        assert len(verdicts) == 0
+
+    def test_results_to_verdicts_no_evidence(self) -> None:
+        """Test results_to_verdicts when attack has no explicit evidence."""
+        adapter = DeepTeamAdapter()
+        report = RedTeamReport(
+            target_name="test",
+            target_purpose="test",
+            config=RedTeamConfig(),
+        )
+
+        # Add successful attack without evidence field
+        result = AttackResult(
+            attack_method=AttackMethod.LEETSPEAK,
+            vulnerability_type=VulnerabilityType.TOXICITY_PROFANITY,
+            input_prompt="t3st",
+            agent_response="bad response",
+            success=True,
+            severity=AttackSeverity.MEDIUM,
+            evidence=None,  # No evidence
+            remediation=None,  # No remediation
+        )
+        report.add_result(result)
+
+        verdicts = adapter.results_to_verdicts(report)
+        assert len(verdicts) == 1
+        # Should have at least agent_response evidence
+        assert len(verdicts[0].evidence) >= 1
+
+
+# =============================================================================
+# RedTeamRunner Coverage Tests
+# =============================================================================
+
+
+class TestRedTeamRunnerCoverage:
+    """Tests to improve runner.py coverage."""
+
+    def test_runner_init_default(self) -> None:
+        """Test runner initialization with defaults."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        runner = RedTeamRunner()
+        assert runner.config is not None
+        assert runner.use_mock is False
+
+    def test_runner_init_with_config(self) -> None:
+        """Test runner initialization with custom config."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        config = RedTeamConfig(attacks_per_vulnerability=10)
+        runner = RedTeamRunner(config=config)
+        assert runner.config.attacks_per_vulnerability == 10
+
+    def test_runner_init_mock_mode(self) -> None:
+        """Test runner initialization with mock mode."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        runner = RedTeamRunner(use_mock=True)
+        assert runner.use_mock is True
+        assert isinstance(runner.adapter, MockRedTeamAdapter)
+
+    def test_runner_from_playbook(self) -> None:
+        """Test creating runner from playbook."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        runner = RedTeamRunner.from_playbook("quick", use_mock=True)
+        assert runner.config.attacks_per_vulnerability == 2
+        assert len(runner.config.vulnerabilities) == 2
+
+    def test_runner_from_playbook_all_playbooks(self) -> None:
+        """Test all playbooks work with runner."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        for playbook in ["quick", "standard", "comprehensive", "owasp-llm"]:
+            runner = RedTeamRunner.from_playbook(playbook, use_mock=True)
+            assert runner.config is not None
+
+    @pytest.mark.asyncio
+    async def test_runner_run_against_callback(self) -> None:
+        """Test running against a callback function."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        config = RedTeamConfig(
+            vulnerabilities=[VulnerabilityType.BIAS_GENDER],
+            attacks=[AttackMethod.PROMPT_INJECTION],
+            attacks_per_vulnerability=1,
+        )
+        runner = RedTeamRunner(config=config, use_mock=True)
+
+        async def callback(text: str) -> str:
+            return f"Response: {text}"
+
+        report = await runner.run_against_callback(callback, target_name="test-callback")
+
+        assert report.target_name == "test-callback"
+        assert report.total_attacks >= 1
+
+    @pytest.mark.asyncio
+    async def test_runner_run_against_mock(self) -> None:
+        """Test running against mock adapter."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        config = RedTeamConfig(
+            vulnerabilities=[VulnerabilityType.PII_DIRECT],
+            attacks=[AttackMethod.LEETSPEAK],
+            attacks_per_vulnerability=2,
+        )
+        runner = RedTeamRunner(config=config, use_mock=True)
+
+        report = await runner.run_against_mock(target_name="mock-test")
+
+        assert report.target_name == "mock-test"
+        assert report.completed_at is not None
+
+    def test_runner_results_to_verdicts(self) -> None:
+        """Test runner results_to_verdicts delegates to adapter."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        runner = RedTeamRunner(use_mock=True)
+
+        report = RedTeamReport(
+            target_name="test",
+            target_purpose="test",
+            config=RedTeamConfig(),
+        )
+        result = AttackResult(
+            attack_method=AttackMethod.PROMPT_INJECTION,
+            vulnerability_type=VulnerabilityType.PII_DIRECT,
+            input_prompt="test",
+            agent_response="leaked data",
+            success=True,
+            severity=AttackSeverity.HIGH,
+        )
+        report.add_result(result)
+
+        verdicts = runner.results_to_verdicts(report)
+        assert len(verdicts) == 1
+
+
+# =============================================================================
+# Config Loader Additional Coverage
+# =============================================================================
+
+
+class TestConfigLoaderCoverage:
+    """Additional tests for config.py coverage."""
+
+    def test_from_dict_with_all_fields(self) -> None:
+        """Test from_dict with all optional fields."""
+        data = {
+            "vulnerabilities": ["bias_gender", "pii_direct"],
+            "attacks": ["prompt_injection", "leetspeak"],
+            "attacks_per_vulnerability": 7,
+            "max_concurrent": 15,
+            "timeout_seconds": 60.0,
+            "target_purpose": "Custom bot",
+            "output_dir": "/tmp/results",
+            "save_results": False,
+        }
+
+        config = RedTeamConfigLoader.from_dict(data)
+
+        assert config.attacks_per_vulnerability == 7
+        assert config.max_concurrent == 15
+        assert config.timeout_seconds == 60.0
+        assert config.target_purpose == "Custom bot"
+        assert config.output_dir == "/tmp/results"
+        assert config.save_results is False
+
+    def test_from_dict_empty_uses_defaults(self) -> None:
+        """Test from_dict with empty dict uses defaults."""
+        config = RedTeamConfigLoader.from_dict({})
+
+        assert len(config.vulnerabilities) > 0
+        assert len(config.attacks) > 0
+
+
+# =============================================================================
+# Additional Coverage: DeepTeam Unavailability Tests
+# =============================================================================
+
+
+class TestDeepTeamUnavailable:
+    """Tests for adapter behavior when DeepTeam is not installed."""
+
+    def test_get_vulnerabilities_returns_empty_when_unavailable(self) -> None:
+        """Test _get_deepteam_vulnerabilities returns empty list when DeepTeam unavailable."""
+        adapter = DeepTeamAdapter()
+        # Force unavailable state
+        adapter._deepteam_available = False
+
+        result = adapter._get_deepteam_vulnerabilities()
+        assert result == []
+
+    def test_get_attacks_returns_empty_when_unavailable(self) -> None:
+        """Test _get_deepteam_attacks returns empty list when DeepTeam unavailable."""
+        adapter = DeepTeamAdapter()
+        # Force unavailable state
+        adapter._deepteam_available = False
+
+        result = adapter._get_deepteam_attacks()
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_run_red_team_when_unavailable(self) -> None:
+        """Test run_red_team returns error report when DeepTeam unavailable."""
+        adapter = DeepTeamAdapter()
+        adapter._deepteam_available = False
+
+        async def callback(text: str) -> str:
+            return "response"
+
+        report = await adapter.run_red_team(callback, "test")
+
+        assert "error" in report.metadata
+        assert "DeepTeam not installed" in report.metadata["error"]
+        assert report.completed_at is not None
+
+
+# =============================================================================
+# Additional Coverage: YAML Config Loading Tests
+# =============================================================================
+
+
+class TestConfigYAMLLoading:
+    """Tests for YAML configuration file loading."""
+
+    def test_from_yaml_file_not_found(self, tmp_path: Path) -> None:
+        """Test from_yaml raises FileNotFoundError for non-existent file."""
+        with pytest.raises(FileNotFoundError, match="Configuration file not found"):
+            RedTeamConfigLoader.from_yaml(tmp_path / "nonexistent.yaml")
+
+    def test_from_yaml_valid_file(self, tmp_path: Path) -> None:
+        """Test from_yaml loads valid YAML configuration."""
+        config_file = tmp_path / "redteam.yaml"
+        config_file.write_text("""
+vulnerabilities:
+  - bias_gender
+  - pii_direct
+attacks:
+  - prompt_injection
+attacks_per_vulnerability: 10
+target_purpose: "Test agent"
+""")
+
+        config = RedTeamConfigLoader.from_yaml(config_file)
+
+        assert VulnerabilityType.BIAS_GENDER in config.vulnerabilities
+        assert VulnerabilityType.PII_DIRECT in config.vulnerabilities
+        assert AttackMethod.PROMPT_INJECTION in config.attacks
+        assert config.attacks_per_vulnerability == 10
+        assert config.target_purpose == "Test agent"
+
+
+# =============================================================================
+# Additional Coverage: Runner YAML and HTTP Tests
+# =============================================================================
+
+
+class TestRunnerYAMLAndHTTP:
+    """Tests for runner YAML loading and HTTP adapter setup."""
+
+    def test_runner_from_yaml(self, tmp_path: Path) -> None:
+        """Test creating runner from YAML config file."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+vulnerabilities:
+  - bias_gender
+attacks:
+  - leetspeak
+attacks_per_vulnerability: 4
+""")
+
+        runner = RedTeamRunner.from_yaml(config_file, use_mock=True)
+
+        assert runner.config.attacks_per_vulnerability == 4
+        assert VulnerabilityType.BIAS_GENDER in runner.config.vulnerabilities
+
+    def test_runner_from_yaml_file_not_found(self, tmp_path: Path) -> None:
+        """Test from_yaml raises FileNotFoundError."""
+        from quaestor.redteam.runner import RedTeamRunner
+
+        with pytest.raises(FileNotFoundError):
+            RedTeamRunner.from_yaml(tmp_path / "missing.yaml")
+
+    @pytest.mark.asyncio
+    async def test_quick_red_team_with_mock_target(self) -> None:
+        """Test quick_red_team convenience function with file target."""
+        from quaestor.redteam.runner import quick_red_team
+
+        report = await quick_red_team(
+            target="test-agent.py",
+            playbook="quick",
+            use_mock=True,
+        )
+
+        assert report.target_name == "test-agent.py"
+        assert report.completed_at is not None
+
+    @pytest.mark.skip(
+        reason="HTTP endpoint testing requires HTTPAdapter config fix (runner.py TODO)"
+    )
+    @pytest.mark.asyncio
+    async def test_quick_red_team_with_http_target(self) -> None:
+        """Test quick_red_team with HTTP target - skipped until HTTPAdapter config is fixed."""
+        pass
+
+
+# =============================================================================
+# Additional Coverage: Mock Adapter Edge Cases
+# =============================================================================
+
+
+class TestMockAdapterEdgeCases:
+    """Edge case tests for MockRedTeamAdapter."""
+
+    @pytest.mark.asyncio
+    async def test_mock_adapter_handles_callback_exception(self) -> None:
+        """Test mock adapter handles callback exceptions gracefully."""
+        config = RedTeamConfig(
+            vulnerabilities=[VulnerabilityType.BIAS_GENDER],
+            attacks=[AttackMethod.PROMPT_INJECTION],
+            attacks_per_vulnerability=1,
+        )
+        adapter = MockRedTeamAdapter(config=config)
+
+        async def failing_callback(text: str) -> str:
+            raise ValueError("Callback error")
+
+        report = await adapter.run_red_team(failing_callback, "test")
+
+        # Should still complete with results containing error info
+        assert report.completed_at is not None
+        # Check that some results were captured despite errors
+        for result in report.results:
+            assert "Error:" in result.agent_response
+
+    @pytest.mark.asyncio
+    async def test_mock_adapter_empty_config(self) -> None:
+        """Test mock adapter with minimal config."""
+        config = RedTeamConfig(
+            vulnerabilities=[VulnerabilityType.BIAS_GENDER],
+            attacks=[AttackMethod.PROMPT_INJECTION],
+            attacks_per_vulnerability=1,
+        )
+        adapter = MockRedTeamAdapter(config=config)
+
+        async def simple_callback(text: str) -> str:
+            return "OK"
+
+        report = await adapter.run_red_team(simple_callback, "minimal-test")
+
+        assert report.total_attacks == 1
+        assert report.target_name == "minimal-test"
