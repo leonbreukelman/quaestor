@@ -923,7 +923,7 @@ class TestDeepTeamUnavailable:
         adapter = DeepTeamAdapter()
         adapter._deepteam_available = False
 
-        async def callback(text: str) -> str:
+        async def callback(_text: str) -> str:
             return "response"
 
         report = await adapter.run_red_team(callback, "test")
@@ -1042,7 +1042,7 @@ class TestMockAdapterEdgeCases:
         )
         adapter = MockRedTeamAdapter(config=config)
 
-        async def failing_callback(text: str) -> str:
+        async def failing_callback(_text: str) -> str:
             raise ValueError("Callback error")
 
         report = await adapter.run_red_team(failing_callback, "test")
@@ -1063,7 +1063,7 @@ class TestMockAdapterEdgeCases:
         )
         adapter = MockRedTeamAdapter(config=config)
 
-        async def simple_callback(text: str) -> str:
+        async def simple_callback(_text: str) -> str:
             return "OK"
 
         report = await adapter.run_red_team(simple_callback, "minimal-test")
