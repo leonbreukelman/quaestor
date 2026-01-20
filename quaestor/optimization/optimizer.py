@@ -151,7 +151,7 @@ class QuaestorOptimizer:
 
         # Use verdict metric by default
         if metric is None:
-            metric = self.create_metric_from_verdicts(min_score=self.config.metric_threshold)
+            metric = self.create_metric_from_verdicts(_min_score=self.config.metric_threshold)
 
         # Create or get cached optimizer
         module_name = module.__class__.__name__
