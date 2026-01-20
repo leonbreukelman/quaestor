@@ -97,7 +97,7 @@ class TestQuaestorOptimizer:
     def test_create_metric_from_verdicts(self) -> None:
         """Test verdict-based metric creation."""
         optimizer = QuaestorOptimizer()
-        metric = optimizer.create_metric_from_verdicts(min_score=0.8)
+        metric = optimizer.create_metric_from_verdicts(_min_score=0.8)
 
         assert callable(metric)
 
@@ -227,7 +227,7 @@ class TestQuaestorOptimizer:
         mock_mipro.return_value = mock_optimizer
         mock_optimizer.compile.return_value = SimpleModule()
 
-        def custom_metric(example, prediction, trace=None) -> float:
+        def custom_metric(_example, _prediction, _trace=None) -> float:
             return 1.0
 
         trainset = [dspy.Example(question="test").with_inputs("question")]
@@ -377,7 +377,7 @@ class TestQuickOptimize:
         mock_optimizer_class.return_value = mock_optimizer
         mock_optimizer.optimize.return_value = SimpleModule()
 
-        def custom_metric(example, prediction, trace=None) -> float:
+        def custom_metric(_example, _prediction, _trace=None) -> float:
             return 1.0
 
         examples = [({"question": "test"}, "answer")]

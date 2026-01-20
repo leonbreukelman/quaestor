@@ -280,9 +280,7 @@ class PatternExtractor:
         if len(tool_calls) < 2:
             return None
 
-        pattern_type = (
-            PatternType.SUCCESSFUL_TOOL_SEQUENCE if success else PatternType.FAILURE_MODE
-        )
+        pattern_type = PatternType.SUCCESSFUL_TOOL_SEQUENCE if success else PatternType.FAILURE_MODE
 
         pattern = Pattern(
             id=self._generate_id("TOOL"),
@@ -401,7 +399,9 @@ class PatternExtractor:
         words = text.lower().split()
         # Filter out common words
         stop_words = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "of", "in"}
-        keywords = [w.strip(".,!?") for w in words if w.strip(".,!?") not in stop_words and len(w) > 2]
+        keywords = [
+            w.strip(".,!?") for w in words if w.strip(".,!?") not in stop_words and len(w) > 2
+        ]
         return keywords[:max_keywords]
 
 
@@ -517,7 +517,7 @@ class PatternMatcher:
     def find_relevant_patterns(
         self,
         agent_tools: list[str],
-        agent_states: list[str] | None = None,
+        agent_states: list[str] | None = None,  # noqa: ARG002
         category: PatternCategory | None = None,
         min_confidence: float = 0.5,
     ) -> list[Pattern]:
@@ -551,7 +551,7 @@ class PatternMatcher:
 
             # Check for any signature match
             sig_tools = []
-            for key, value in pattern.signature.items():
+            for _key, value in pattern.signature.items():
                 if isinstance(value, list):
                     sig_tools.extend([str(v) for v in value])
 

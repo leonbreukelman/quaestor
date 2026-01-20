@@ -9,6 +9,7 @@ Part of Phase 3: Runtime Testing.
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -24,25 +25,31 @@ from quaestor.runtime.adapters import (
     ToolCall,
     ToolResult,
 )
+from quaestor.runtime.probe_types import ProbeType
 from quaestor.testing.models import TestCase
+
+# Ensure the LM is configured globally for DSPy
+if not dspy.settings.lm:
+    dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 # =============================================================================
 # DSPy Signatures
 # =============================================================================
 
 
+# Extend ProbeStrategySignature to support multiple probe types
 class ProbeStrategySignature(dspy.Signature):
     """
-    Determine the next probe based on conversation history.
-
-    Analyzes previous turns to decide what to probe next,
-    adapting strategy based on agent responses and observations.
+    Determine the next probe based on conversation history and probe type preferences.
     """
 
     conversation_history: str = dspy.InputField(
         desc="JSON array of previous messages and responses"
     )
     observations: str = dspy.InputField(desc="JSON array of observations made so far")
+    probe_type_preferences: dict[str, float] = dspy.InputField(
+        desc="Weights for probe type preferences (e.g., {'positive': 0.5, 'adversarial': 0.3})"
+    )
     current_strategy: str = dspy.InputField(
         desc="Current probing strategy (exploratory, targeted, adversarial, etc.)"
     )
@@ -210,6 +217,61 @@ class InvestigatorConfig:
 
 
 # =============================================================================
+# Probe History
+# =============================================================================
+
+
+class ProbeEntry:
+    """Represents a single entry in the probe history."""
+
+    def __init__(
+        self,
+        turn_number: int,
+        probe_text: str,
+        probe_type: ProbeStrategy | ProbeType,
+        response_text: str,
+        observations: dict[str, Any],
+        status: str,
+    ):
+        self.turn_number = turn_number
+        self.probe_text = probe_text
+        self.probe_type = probe_type
+        self.response_text = response_text
+        self.observations = observations
+        self.status = status
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert entry to dictionary."""
+        return {
+            "turn_number": self.turn_number,
+            "probe_text": self.probe_text,
+            "probe_type": self.probe_type.value,
+            "response_text": self.response_text,
+            "observations": self.observations,
+            "status": self.status,
+        }
+
+
+class ProbeHistory:
+    """Tracks all probes and responses during an investigation session."""
+
+    def __init__(self) -> None:
+        self.entries: list[ProbeEntry] = []
+
+    def add_entry(self, entry: ProbeEntry) -> None:
+        """Add a new probe entry to the history."""
+        self.entries.append(entry)
+
+    def query_by_type(self, probe_type: ProbeStrategy) -> list[ProbeEntry]:
+        """Query history by probe type."""
+        return [entry for entry in self.entries if entry.probe_type == probe_type]
+
+    def query_by_turn(self, turn_number: int) -> list[ProbeEntry]:
+        """Query history by turn number."""
+        return [entry for entry in self.entries if entry.turn_number == turn_number]
+
+
+# =============================================================================
 # QuaestorInvestigator
 # =============================================================================
 
@@ -240,28 +302,44 @@ class QuaestorInvestigator:
         adapter: TargetAdapter,
         config: InvestigatorConfig | None = None,
         use_dspy: bool = False,
+        max_turns: int = 10,
+        probe_type_weights: dict[str, float] | None = None,
+        termination_criteria: Callable[[str], bool] | None = None,
     ):
         """
-        Initialize the investigator.
+        Initialize the investigator with session configuration.
 
         Args:
-            adapter: Target adapter for agent communication
-            config: Investigator configuration
-            use_dspy: Whether to use DSPy for adaptive probing
+            adapter: Target adapter for agent communication.
+            config: Investigator configuration.
+            use_dspy: Whether to use DSPy for adaptive probing.
+            max_turns: Maximum number of turns in a session.
+            probe_type_weights: Weights for probe type preferences.
+            termination_criteria: Callable to determine session termination.
         """
         self.adapter = adapter
         self.config = config or InvestigatorConfig()
         self.use_dspy = use_dspy
+        self.max_turns = max_turns
+        self.probe_type_preferences = probe_type_weights or {
+            ProbeType.POSITIVE.value: 0.5,
+            ProbeType.ADVERSARIAL.value: 0.3,
+            ProbeType.EDGE_CASE.value: 0.2,
+        }
+        self.termination_criteria = termination_criteria
+        self.probe_history = ProbeHistory()
 
-        # Session state
+        # Initialize DSPy module
+        self._dspy_module = None
+
+        # Initialize strategy
+        self._strategy = self.config.default_strategy
+
+        # Initialize session state
         self._observations: list[Observation] = []
         self._tool_calls: list[ToolCall] = []
-        self._current_turn = 0
-        self._strategy = self.config.default_strategy
+        self._current_turn: int = 0
         self._session_start: datetime | None = None
-
-        # DSPy module (lazy-loaded)
-        self._dspy_module: dspy.Module | None = None
 
     @property
     def dspy_module(self) -> dspy.Module:
@@ -283,6 +361,15 @@ class QuaestorInvestigator:
     def set_strategy(self, strategy: ProbeStrategy) -> None:
         """Set the probing strategy."""
         self._strategy = strategy
+
+    def _select_probe_type(self) -> ProbeType:
+        """Select a probe type based on configured preferences."""
+        import random
+
+        probe_types = list(self.probe_type_preferences.keys())
+        weights = list(self.probe_type_preferences.values())
+        selected_type = random.choices(probe_types, weights=weights, k=1)[0]
+        return ProbeType(selected_type)
 
     async def probe(self, test_case: TestCase) -> ProbeResult:
         """
@@ -652,14 +739,54 @@ class QuaestorInvestigator:
                     )
                     await self.adapter.send_tool_result(tool_result)
 
-    async def _execute_step(self, step: dict[str, Any] | str) -> None:
-        """Execute a test step."""
-        if isinstance(step, str):
-            content = step
-        else:
-            content = step.get("input", step.get("message", str(step)))
+    def _record_probe(
+        self,
+        turn: int,
+        probe: str,
+        response: str,
+        probe_type: ProbeStrategy | ProbeType,
+        status: str,
+    ) -> None:
+        """Record a probe and its response in the history."""
+        entry = ProbeEntry(
+            turn_number=turn,
+            probe_text=probe,
+            probe_type=probe_type,
+            response_text=response,
+            observations={},
+            status=status,
+        )
+        self.probe_history.add_entry(entry)
 
-        await self._probe_turn(content)
+    async def _execute_step(self, message: str) -> None:
+        """Execute a single probing step with retry logic for adapter failures."""
+        probe_type = self._select_probe_type()
+        retries = 0
+        max_retries = 2  # Configurable retry limit
+
+        while retries <= max_retries:
+            try:
+                agent_message = AgentMessage(content=message)
+                agent_response = await self.adapter.send_message(agent_message)
+                self._record_probe(
+                    turn=self._current_turn,
+                    probe=message,
+                    response=agent_response.content,
+                    probe_type=probe_type,
+                    status="success",
+                )
+                return  # Exit after successful probe
+            except Exception as e:
+                retries += 1
+                if retries > max_retries:
+                    self._record_probe(
+                        turn=self._current_turn,
+                        probe=message,
+                        response="",
+                        probe_type=probe_type,
+                        status=f"failure: {str(e)}",
+                    )
+                    break  # Exit after exhausting retries
 
     def _check_adversarial_response(
         self,
@@ -804,6 +931,52 @@ class QuaestorInvestigator:
             verdict=verdict,
             notes=notes,
         )
+
+    async def run_session(self, initial_context: str) -> None:
+        """Run an adaptive probing session with configured parameters."""
+        context = initial_context
+        for turn in range(1, self.max_turns + 1):
+            if self.use_dspy:
+                probe = self.dspy_module.predict(
+                    conversation_history=context,
+                    observations=json.dumps([]),
+                    probe_type_preferences=json.dumps(self.probe_type_preferences),
+                    current_strategy=self._strategy.value,
+                    test_objective="Explore agent capabilities",
+                )
+            else:
+                # Simple fallback when DSPy is not enabled
+                probe = f"Probe turn {turn}: {context}"
+            print(f"Turn {turn}: Generated probe: {probe}")  # Debugging
+            response_content = ""  # Initialize before try block
+            try:
+                agent_message = AgentMessage(content=str(probe))
+                agent_response = await self.adapter.send_message(agent_message)
+                response_content = agent_response.content
+                print(f"Turn {turn}: Received response: {response_content}")  # Debugging
+                self._record_probe(
+                    turn=turn,
+                    probe=str(probe),
+                    response=response_content,
+                    probe_type=self._select_probe_type(),
+                    status="success",
+                )
+                # Check termination criteria after recording the probe
+                if self.termination_criteria and self.termination_criteria(response_content):
+                    print(f"Turn {turn}: Termination criteria met. Ending session.")  # Debugging
+                    break
+            except Exception as e:
+                print(f"Turn {turn}: Exception occurred: {e}")  # Debugging
+                self._record_probe(
+                    turn=turn,
+                    probe=str(probe),
+                    response="",
+                    probe_type=self._select_probe_type(),
+                    status=f"failure: {str(e)}",
+                )
+
+            # Update context for the next turn
+            context = f"{context} {response_content}"
 
 
 # =============================================================================

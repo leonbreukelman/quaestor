@@ -73,19 +73,19 @@ class QuaestorOptimizer:
         self._optimizers: dict[str, MIPROv2] = {}
 
     def create_metric_from_verdicts(
-        self, min_score: float = 0.8
-    ) -> Callable:
+        self, _min_score: float = 0.8
+    ) -> Callable[[dspy.Example, Any, Any], float]:
         """
         Create an optimization metric from verdicts.
 
         Args:
-            min_score: Minimum acceptable score (0-1)
+            _min_score: Minimum acceptable score (0-1), reserved for future use
 
         Returns:
             Metric function for DSPy optimization
         """
 
-        def verdict_metric(example: dspy.Example, prediction: Any, trace=None) -> float:
+        def verdict_metric(example: dspy.Example, prediction: Any, trace: Any = None) -> float:  # noqa: ARG001
             """
             Evaluate prediction quality based on verdict scores.
 
@@ -125,7 +125,7 @@ class QuaestorOptimizer:
         self,
         module: dspy.Module,
         trainset: list[dspy.Example],
-        metric: Callable | None = None,
+        metric: Callable[[dspy.Example, Any, Any], float] | None = None,
         valset: list[dspy.Example] | None = None,
     ) -> dspy.Module:
         """
@@ -151,9 +151,7 @@ class QuaestorOptimizer:
 
         # Use verdict metric by default
         if metric is None:
-            metric = self.create_metric_from_verdicts(
-                min_score=self.config.metric_threshold
-            )
+            metric = self.create_metric_from_verdicts(_min_score=self.config.metric_threshold)
 
         # Create or get cached optimizer
         module_name = module.__class__.__name__
@@ -167,9 +165,7 @@ class QuaestorOptimizer:
 
             # Add teacher model if specified
             if self.teacher_model:
-                optimizer_kwargs["teacher_settings"] = {
-                    "lm": dspy.LM(self.teacher_model)
-                }
+                optimizer_kwargs["teacher_settings"] = {"lm": dspy.LM(self.teacher_model)}
 
             self._optimizers[module_name] = MIPROv2(**optimizer_kwargs)
 
@@ -191,9 +187,7 @@ class QuaestorOptimizer:
 
         return optimized_module
 
-    def save_optimized_module(
-        self, module: dspy.Module, output_path: str | Path
-    ) -> None:
+    def save_optimized_module(self, module: dspy.Module, output_path: str | Path) -> None:
         """
         Save optimized module to disk.
 
@@ -230,7 +224,7 @@ class QuaestorOptimizer:
 def quick_optimize(
     module: dspy.Module,
     examples: list[tuple[dict[str, Any], Any]],
-    metric: Callable | None = None,
+    metric: Callable[[dspy.Example, Any, Any], float] | None = None,
     **kwargs: Any,
 ) -> dspy.Module:
     """
