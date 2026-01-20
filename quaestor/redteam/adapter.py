@@ -179,9 +179,34 @@ class DeepTeamAdapter:
                 report.complete()
                 return report
 
+            # Wrap async callback for DeepTeam's sync API
+            import asyncio
+            from typing import Any, cast
+
+            async def _call_agent(prompt: str) -> str:
+                return await agent_callback(prompt)
+
+            def sync_callback(prompt: str, history: Any = None) -> str:
+                """Sync wrapper for async agent callback."""
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop is not None:
+                    # If already in async context, run in thread pool
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        result: str = pool.submit(
+                            lambda: asyncio.run(_call_agent(prompt))
+                        ).result()
+                        return result
+                else:
+                    return asyncio.run(_call_agent(prompt))
+
             # Execute DeepTeam red teaming
             risk_assessment = red_team(
-                model_callback=agent_callback,
+                model_callback=sync_callback,
                 vulnerabilities=vulnerabilities,
                 attacks=attacks,
             )
@@ -327,7 +352,7 @@ class DeepTeamAdapter:
 
     def _vuln_to_category(self, vuln_type: VulnerabilityType) -> EvaluationCategory:
         """Map vulnerability type to evaluation category."""
-        vuln_str = str(vuln_type)
+        vuln_str = str(vuln_type).lower()
         if "bias" in vuln_str or "toxic" in vuln_str:
             return EvaluationCategory.ETHICS
         if "pii" in vuln_str or "leak" in vuln_str:

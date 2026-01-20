@@ -228,7 +228,7 @@ class ProbeEntry:
         self,
         turn_number: int,
         probe_text: str,
-        probe_type: ProbeStrategy,
+        probe_type: ProbeStrategy | ProbeType,
         response_text: str,
         observations: dict[str, Any],
         status: str,
@@ -255,7 +255,7 @@ class ProbeEntry:
 class ProbeHistory:
     """Tracks all probes and responses during an investigation session."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.entries: list[ProbeEntry] = []
 
     def add_entry(self, entry: ProbeEntry) -> None:
@@ -334,6 +334,12 @@ class QuaestorInvestigator:
 
         # Initialize strategy
         self._strategy = self.config.default_strategy
+
+        # Initialize session state
+        self._observations: list[Observation] = []
+        self._tool_calls: list[ToolCall] = []
+        self._current_turn: int = 0
+        self._session_start: datetime | None = None
 
     @property
     def dspy_module(self) -> dspy.Module:
@@ -738,7 +744,7 @@ class QuaestorInvestigator:
         turn: int,
         probe: str,
         response: str,
-        probe_type: ProbeStrategy,
+        probe_type: ProbeStrategy | ProbeType,
         status: str,
     ) -> None:
         """Record a probe and its response in the history."""
@@ -760,11 +766,12 @@ class QuaestorInvestigator:
 
         while retries <= max_retries:
             try:
-                response = await self.adapter.send_probe(message)
+                agent_message = AgentMessage(content=message)
+                agent_response = await self.adapter.send_message(agent_message)
                 self._record_probe(
                     turn=self._current_turn,
                     probe=message,
-                    response=response,
+                    response=agent_response.content,
                     probe_type=probe_type,
                     status="success",
                 )
@@ -925,7 +932,7 @@ class QuaestorInvestigator:
             notes=notes,
         )
 
-    async def run_session(self, initial_context: str):
+    async def run_session(self, initial_context: str) -> None:
         """Run an adaptive probing session with configured parameters."""
         context = initial_context
         for turn in range(1, self.max_turns + 1):
@@ -937,32 +944,35 @@ class QuaestorInvestigator:
                 test_objective="Explore agent capabilities",
             )
             print(f"Turn {turn}: Generated probe: {probe}")  # Debugging
+            response_content = ""  # Initialize before try block
             try:
-                response = await self.adapter.send_probe(probe)
-                print(f"Turn {turn}: Received response: {response}")  # Debugging
+                agent_message = AgentMessage(content=str(probe))
+                agent_response = await self.adapter.send_message(agent_message)
+                response_content = agent_response.content
+                print(f"Turn {turn}: Received response: {response_content}")  # Debugging
                 self._record_probe(
                     turn=turn,
-                    probe=probe,
-                    response=response,
+                    probe=str(probe),
+                    response=response_content,
                     probe_type=self._select_probe_type(),
                     status="success",
                 )
                 # Check termination criteria after recording the probe
-                if self.termination_criteria and self.termination_criteria(response):
+                if self.termination_criteria and self.termination_criteria(response_content):
                     print(f"Turn {turn}: Termination criteria met. Ending session.")  # Debugging
                     break
             except Exception as e:
                 print(f"Turn {turn}: Exception occurred: {e}")  # Debugging
                 self._record_probe(
                     turn=turn,
-                    probe=probe,
+                    probe=str(probe),
                     response="",
                     probe_type=self._select_probe_type(),
                     status=f"failure: {str(e)}",
                 )
 
             # Update context for the next turn
-            context = f"{context} {response}"
+            context = f"{context} {response_content}"
 
 
 # =============================================================================

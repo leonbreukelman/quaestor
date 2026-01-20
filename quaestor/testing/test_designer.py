@@ -276,8 +276,12 @@ class TestDesigner:
             warnings.append(f"DSPy generation failed: {e}. Falling back to mock mode.")
             return self._design_mock(workflow)
 
-        # Convert to test suite
-        test_suite = self._scenarios_to_test_suite(workflow, scenarios)
+        # Convert to test suite (may fail if no valid test cases)
+        try:
+            test_suite = self._scenarios_to_test_suite(workflow, scenarios)
+        except ValueError as e:
+            warnings.append(f"DSPy produced no valid test cases: {e}. Falling back to mock mode.")
+            return self._design_mock(workflow)
 
         return DesignResult(
             scenarios=scenarios,
@@ -694,6 +698,9 @@ class TestDesigner:
         test_cases = []
 
         for scenario in scenarios:
+            # Skip scenarios without assertions (TestCase requires at least one)
+            if not scenario.assertions:
+                continue
             test_case = TestCase(
                 id=f"tc_{uuid4().hex[:8]}",
                 name=scenario.name,

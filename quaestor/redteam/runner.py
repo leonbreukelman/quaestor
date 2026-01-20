@@ -10,6 +10,7 @@ Part of Phase 7: Red Team Capabilities.
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 from quaestor.redteam.adapter import DeepTeamAdapter, MockRedTeamAdapter
 from quaestor.redteam.config import RedTeamConfigLoader
@@ -20,7 +21,9 @@ from quaestor.runtime.adapters import (
     AgentResponse,
     BaseAdapter,
     HTTPAdapter,
+    HTTPAdapterConfig,
     MockAdapter,
+    MockResponse,
 )
 
 # Type alias for agent callback
@@ -50,6 +53,8 @@ class RedTeamRunner:
         self.config = config or RedTeamConfig()
         self.use_mock = use_mock
 
+        # Type annotation to allow both adapter types
+        self.adapter: MockRedTeamAdapter | DeepTeamAdapter
         if use_mock:
             self.adapter = MockRedTeamAdapter(config=self.config)
         else:
@@ -102,18 +107,13 @@ class RedTeamRunner:
         Returns:
             RedTeamReport with results
         """
-        adapter_config = AdapterConfig(
+        http_config = HTTPAdapterConfig(
             timeout_seconds=self.config.timeout_seconds,
+            endpoint=url,
+            custom_headers=headers or {},
         )
 
-        http_adapter = HTTPAdapter(
-            base_url=url,
-            config=adapter_config,
-        )
-
-        # Add custom headers if provided
-        if headers:
-            http_adapter._headers.update(headers)
+        http_adapter = HTTPAdapter(config=http_config)
 
         return await self._run_with_adapter(
             adapter=http_adapter,
@@ -160,7 +160,11 @@ class RedTeamRunner:
         Returns:
             RedTeamReport with results
         """
-        mock_adapter = MockAdapter(responses=responses)
+        # Convert dict responses to MockResponse list
+        mock_responses: list[MockResponse] | None = None
+        if responses:
+            mock_responses = [MockResponse(content=v) for v in responses.values()]
+        mock_adapter = MockAdapter(responses=mock_responses)
 
         return await self._run_with_adapter(
             adapter=mock_adapter,
@@ -204,7 +208,7 @@ class RedTeamRunner:
             # Always disconnect
             await adapter.disconnect()
 
-    def results_to_verdicts(self, report: RedTeamReport):
+    def results_to_verdicts(self, report: RedTeamReport) -> list[Any]:
         """
         Convert red team results to evaluation verdicts.
 
