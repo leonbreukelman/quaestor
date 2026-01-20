@@ -73,13 +73,13 @@ class QuaestorOptimizer:
         self._optimizers: dict[str, MIPROv2] = {}
 
     def create_metric_from_verdicts(
-        self, min_score: float = 0.8
-    ) -> Callable[[dspy.Example, Any, Any], float]:  # noqa: ARG002
+        self, _min_score: float = 0.8
+    ) -> Callable[[dspy.Example, Any, Any], float]:
         """
         Create an optimization metric from verdicts.
 
         Args:
-            min_score: Minimum acceptable score (0-1)
+            _min_score: Minimum acceptable score (0-1), reserved for future use
 
         Returns:
             Metric function for DSPy optimization
