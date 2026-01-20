@@ -181,12 +181,12 @@ class DeepTeamAdapter:
 
             # Wrap async callback for DeepTeam's sync API
             import asyncio
-            from typing import Any, cast
+            from typing import Any
 
             async def _call_agent(prompt: str) -> str:
                 return await agent_callback(prompt)
 
-            def sync_callback(prompt: str, history: Any = None) -> str:
+            def sync_callback(prompt: str, _history: Any = None) -> str:
                 """Sync wrapper for async agent callback."""
                 try:
                     loop = asyncio.get_running_loop()

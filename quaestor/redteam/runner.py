@@ -16,7 +16,6 @@ from quaestor.redteam.adapter import DeepTeamAdapter, MockRedTeamAdapter
 from quaestor.redteam.config import RedTeamConfigLoader
 from quaestor.redteam.models import RedTeamConfig, RedTeamReport
 from quaestor.runtime.adapters import (
-    AdapterConfig,
     AgentMessage,
     AgentResponse,
     BaseAdapter,

@@ -485,7 +485,7 @@ def learn(
     # Initialize pattern library and extractor
     storage_path = Path(output) if output else None
     library = PatternLibrary(storage_path=storage_path)
-    extractor = PatternExtractor(library=library)
+    _extractor = PatternExtractor(library=library)  # noqa: F841 - placeholder for full implementation
 
     console.print("\n[bold]Analyzing examples...[/bold]")
 
