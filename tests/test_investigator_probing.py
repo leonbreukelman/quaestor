@@ -101,6 +101,7 @@ async def test_adapter_failure_handling():
 @pytest.mark.asyncio
 async def test_termination_criteria():
     """Test that session terminates when criteria is met."""
+
     def termination_criteria(response: str) -> bool:
         return "STOP" in response
 

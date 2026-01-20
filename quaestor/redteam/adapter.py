@@ -196,10 +196,9 @@ class DeepTeamAdapter:
                 if loop is not None:
                     # If already in async context, run in thread pool
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor() as pool:
-                        result: str = pool.submit(
-                            lambda: asyncio.run(_call_agent(prompt))
-                        ).result()
+                        result: str = pool.submit(lambda: asyncio.run(_call_agent(prompt))).result()
                         return result
                 else:
                     return asyncio.run(_call_agent(prompt))

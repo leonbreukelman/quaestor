@@ -72,7 +72,9 @@ class QuaestorOptimizer:
         self.teacher_model = teacher_model
         self._optimizers: dict[str, MIPROv2] = {}
 
-    def create_metric_from_verdicts(self, min_score: float = 0.8) -> Callable[[dspy.Example, Any, Any], float]:  # noqa: ARG002
+    def create_metric_from_verdicts(
+        self, min_score: float = 0.8
+    ) -> Callable[[dspy.Example, Any, Any], float]:  # noqa: ARG002
         """
         Create an optimization metric from verdicts.
 
