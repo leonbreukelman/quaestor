@@ -936,13 +936,17 @@ class QuaestorInvestigator:
         """Run an adaptive probing session with configured parameters."""
         context = initial_context
         for turn in range(1, self.max_turns + 1):
-            probe = self.dspy_module.predict(
-                conversation_history=context,
-                observations=json.dumps([]),
-                probe_type_preferences=json.dumps(self.probe_type_preferences),
-                current_strategy=self._strategy.value,
-                test_objective="Explore agent capabilities",
-            )
+            if self.use_dspy:
+                probe = self.dspy_module.predict(
+                    conversation_history=context,
+                    observations=json.dumps([]),
+                    probe_type_preferences=json.dumps(self.probe_type_preferences),
+                    current_strategy=self._strategy.value,
+                    test_objective="Explore agent capabilities",
+                )
+            else:
+                # Simple fallback when DSPy is not enabled
+                probe = f"Probe turn {turn}: {context}"
             print(f"Turn {turn}: Generated probe: {probe}")  # Debugging
             response_content = ""  # Initialize before try block
             try:

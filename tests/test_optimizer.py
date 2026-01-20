@@ -97,7 +97,7 @@ class TestQuaestorOptimizer:
     def test_create_metric_from_verdicts(self) -> None:
         """Test verdict-based metric creation."""
         optimizer = QuaestorOptimizer()
-        metric = optimizer.create_metric_from_verdicts(min_score=0.8)
+        metric = optimizer.create_metric_from_verdicts(_min_score=0.8)
 
         assert callable(metric)
 
